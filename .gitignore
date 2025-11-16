@@ -1,0 +1,6 @@
+*.txt
+*.rar
+*.zip
+*.asm
+*.bin
+/build
