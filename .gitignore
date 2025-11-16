@@ -3,4 +3,4 @@
 *.zip
 *.asm
 *.bin
-/build
+build/
