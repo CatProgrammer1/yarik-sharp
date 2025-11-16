@@ -1,0 +1,73 @@
+/*Любые комментарии пишутся вот так, даже если только на одну линию кода*/
+
+import "название файла встроенной библиотеки либо название файла которое лежить возле твоего основного файла" /*Импорт должен быть обязательно в начале*/
+
+yar a, b, c = 1, true, "Hello!"
+yar d = void /*Вместо nil или null у меня void*/
+
+func functionExample(a, b, c) {
+    print(a, b, c)
+
+    return "Return value", "Return value2"
+}
+
+yar returnValue, returnValu2 = functionExample(1, 5, 10) /*При вызове функции должно быть обязательно указано столько аргументов сколько вписано при создании*/
+
+yar tableExample = [
+    0: 1,
+    5: 10,
+    "hello": [
+        "table inside table": true,
+    ],
+]
+
+/*Можно как в масиве просто вписать елемент без ключа*/
+yar tableExample2 = [
+    5,
+    true,
+    "Hello!",
+    [
+        "Sigma",
+    ],
+]
+
+yar k = 10
+yar l = 20
+
+if k < l {
+    print("K is less than L!")
+}
+
+yar i = 0
+while i < 100 {
+    i = i + 1
+
+    print(i, "iteration")
+}/*нету фор циклов зато есть вайл цикл*/
+
+struct NewStruct {
+    g,
+    h,
+    func Method(a) {
+        print(a)
+    }/*После создания методов в структуре нету запятой*/
+    k,
+}
+
+yar instance = new NewStruct{
+    g: 10,
+    h: true,
+    k: "Some string!",
+}
+
+/*Вот список всех встроенных функций:
+1)OS_NAME() -> string
+2)print(...) -> void
+3)sleep(n: number(секунды, может быть числом с плавающей точкой))
+4)throw(...) -> void
+5)len(v: string | table) -> number(int)
+6)tostr(v: any) -> string
+7)tonum(str: string) -> number
+8)gettype(v: any) -> string
+9)tochar(v: number(byte)) -> string(character)
+*/

@@ -1,0 +1,14 @@
+func make(lenght) {
+    if gettype(lenght) != "number" {
+        throw("Lenght argument must be a number")
+    }
+
+    yar newbuf = []
+
+    yar i = 0
+    while i < lenght {
+        newbuf[i] = void
+    }
+
+    return newbuf
+}

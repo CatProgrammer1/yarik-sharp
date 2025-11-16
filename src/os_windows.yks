@@ -1,0 +1,68 @@
+import "sys"
+
+struct File {
+    file,
+    func Read(buf, buflen) {
+        yar err = Read(this->file, buflen, buf)
+
+        return err
+    }
+    func Write(data) {
+        yar err = Write(this->file, data)
+
+        return err
+    }
+    func Close() {
+        yar err = Close(this->file)
+
+        return err
+    }
+}
+
+struct OS_LIB {
+    func Open(path, flag, perm) {
+        yar fd, err = Open(path, flag, perm)
+
+        yar newfile = new File{
+            file: fd,
+        }
+
+        return newfile, err
+    }
+    func Create(name) {
+        yar namePtr, _ = UTF16PointerFromString(name)
+
+        yar handle, err = Create(namePtr, GENERIC_ALL, FILE_SHARE_READ, void, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, 0)
+
+        UTF16PtrRelease(namePtr)
+
+        return new File{
+            file: handle,
+        }, err
+    }
+    func FileInfo(file) {
+        yar info, err = GetFileInformationByHandle(file->file)
+
+        return info, err
+    }
+    func CreateDir(name, mode) {
+        yar err = Mkdir(name, mode)
+
+        return err
+    }
+    func RemoveDir(name) {
+        yar namePtr, _ = UTF16PointerFromString(name)
+
+        yar err = RemoveDir(namePtr)
+
+        UTF16PtrRelease(namePtr)
+
+        return err
+    }
+    
+    func Exit(code) {
+        ExitProcess(code)
+    }
+}
+
+yar os = new OS_LIB{}

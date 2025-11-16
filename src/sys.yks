@@ -1,0 +1,51 @@
+/*
+Из-за некоторых ограничений функции созданы под капотом
+*/
+
+yar O_RDONLY = 0
+yar O_WRONLY = 1
+yar O_RDWR = 2
+yar O_APPEND = 1024
+yar O_CREATE = 512
+yar O_EXCL = 2048
+yar O_TRUNC = 512
+yar S_IRUSR = 256
+yar S_IWUSR = 128
+yar S_IXUSR = 64
+yar S_IRGRP = 32
+yar S_IWGRP = 16
+yar S_IXGRP = 8
+yar S_IROTH = 4
+yar S_IWOTH = 2
+yar S_IXOTH = 1
+yar EINTR = 4
+yar EBADF = 9
+yar EACCES = 13
+yar ENOENT = 2
+yar EEXIST = 17
+yar EINVAL = 22
+yar EIO = 5
+yar EPERM = 1
+yar SIGINT = 2
+yar SIGKILL = 9
+yar SIGTERM = 15
+
+yar GENERIC_READ = 2147483648
+yar GENERIC_WRITE = 1073741824
+yar GENERIC_EXECUTE = 536870912
+yar GENERIC_ALL = 268435456
+yar FILE_SHARE_READ = 1
+yar FILE_SHARE_WRITE = 2
+yar FILE_SHARE_DELETE = 4
+yar OPEN_EXISTING = 3
+yar CREATE_NEW = 1
+yar CREATE_ALWAYS = 2
+yar OPEN_ALWAYS = 4
+yar TRUNCATE_EXISTING = 5
+yar FILE_ATTRIBUTE_NORMAL = 128
+yar FILE_FLAG_OVERLAPPED = 1073741824
+yar ERROR_HANDLE_EOF = 38
+yar INVALID_HANDLE_VALUE = -1
+yar chunkSize = 32768
+yar MAX_PATH = 260
+
