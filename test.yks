@@ -1,5 +1,0 @@
-struct Sigma {
-    #bits -16 sigma,
-}
-
-
