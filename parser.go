@@ -305,7 +305,6 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 					}
 					lastNode.Src = node
 
-					
 					return nodes
 				}
 			}

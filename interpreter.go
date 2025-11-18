@@ -138,13 +138,13 @@ func format(v ...any) string {
 		}
 
 		switch a := a.(type) {
-		case *orderedmap.OrderedMap[any, any]:
+		case *orderedmap.OrderedMap[*Cell, *Cell]:
 			mapFormat := "{%s}"
 			elemFormat := "[%s]: %s, "
 
 			var elements string
 			for k, v := range a.AllFromFront() {
-				elements += fmt.Sprintf(elemFormat, format(k), format(v))
+				elements += fmt.Sprintf(elemFormat, format(k.Value), format(v.Value))
 			}
 
 			formated += fmt.Sprintf(mapFormat, elements) + suffix
@@ -159,7 +159,9 @@ func format(v ...any) string {
 			var fields string
 
 			for _, field := range a.Fields {
-				fields += fmt.Sprintf(fieldFormat, field.Identifier, format(field.Value))
+				cell := field.Value
+
+				fields += fmt.Sprintf(fieldFormat, field.Identifier, format(cell.Value))
 			}
 
 			formated += fmt.Sprintf(structFormat, a.Identifier, fields) + suffix
@@ -389,9 +391,18 @@ type FieldLayout struct {
 
 func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 	size := layout[len(layout)-1].Offset + layout[len(layout)-1].Size
+
 	var mem []byte
 	if len(s.LastMem) == 0 {
 		mem = make([]byte, size)
+	} else if len(s.LastMem) < int(size) {
+		newMem := make([]byte, size)
+
+		copy(newMem, s.LastMem)
+
+		mem = newMem
+	} else {
+		mem = s.LastMem
 	}
 
 	for _, lf := range layout {
@@ -627,13 +638,17 @@ func (s *StructObject) Layout() []FieldLayout {
 			case PTR:
 				size, align, typ = 8, 8, "ptr"
 			case float64:
-				if math.Floor(v) == v {
-					size, align, typ = 8, 8, "int64"
+				if v == math.Trunc(v) && v >= math.MinInt64 && v <= math.MaxUint64 {
+					if v >= 0 && v <= math.MaxUint64 {
+						size, align, typ = 8, 8, "uint64"
+					} else {
+						size, align, typ = 8, 8, "int64"
+					}
 				} else {
 					size, align, typ = 8, 8, "float"
 				}
 			default:
-				throwNoPos("Unsupported field type: %s (%T)", field.Identifier, v)
+				throwNoPos("Unsupported field type: %s", field.Identifier)
 			}
 		}
 
@@ -809,10 +824,10 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 				throw("Attempt to get a pointer of non-existing value.", node.X, node.Y)
 			}
 
-			switch value := cell.Value.(type) {
+			switch cell.Value.(type) {
 			case *StructObject:
-				ptr, _ := valueToPtr(value, node.X, node.Y)
-
+				ptr, _ := valueToPtr(cell.Value, node.X, node.Y)
+				fmt.Println("POINTER STRUCT")
 				return unsafe.Pointer(ptr)
 			default:
 				return cell.Ptr
@@ -1230,12 +1245,11 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		fields = append(fields, &Field{
 			Identifier: fieldDecl.Identifier,
 			Method:     fieldDecl.Method,
-			LayoutType: fieldDecl.Bits,
 			Value:      cell,
 		})
 	}
 
-	for _, fieldNode := range structObjNode.Fields {
+	for i, fieldNode := range structObjNode.Fields {
 		if !originalStructure.CheckField(fieldNode.Identifier.Value) {
 			throw("Attempt to assign a nonexistent field of structure '%s' while trying to make an instance.", structObjNode.X, structObjNode.Y, identifier)
 		}
@@ -1248,8 +1262,11 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		}
 		cell.Ptr = unsafe.Pointer(&cell.Value)
 
+		bits := originalStructure.Fields[i].Bits
+
 		fields = append(fields, &Field{
 			Identifier: fieldNode.Identifier.Value,
+			LayoutType: bits,
 			Value:      cell,
 		})
 	}
