@@ -46,6 +46,7 @@ var (
 		"*": "mul",
 		"^": "pow",
 		"|": "bitor",
+		"&": "getptr",
 
 		"->": "indexstruct",
 

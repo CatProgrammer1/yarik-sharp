@@ -14,7 +14,7 @@ var (
 	tokenTypesExpects = map[string][]string{
 		"number,ident,string,bool,nil,openbracket,opensqbrac,newstruct": {"openbracket", "opensqbrac", "add", "bitor", "sub", "div", "mul", "pow",
 			"equals", "notequals", "greater", "less", "greatereq", "lesseq", "and", "or", "indexstruct"},
-		"add,sub,div,mul,pow,equals,notequals,greater,less,greatereq,lesseq,bitor,and,or,return": {"number", "ident", "string", "bool", "openbracket", "nil"},
+		"add,sub,div,mul,pow,equals,notequals,greater,less,greatereq,lesseq,bitor,and,or,return,getptr": {"number", "ident", "string", "bool", "openbracket", "nil"},
 		"opensqbrac": {"opensqbrac"},
 	}
 	binOpsList = []string{
@@ -177,6 +177,12 @@ func appendDataType(node Node, nodes []Node) []Node {
 			return nodes
 		}
 		nodes = append(nodes, node)
+	case *GetPtrNode:
+		if lastNode.Src == nil {
+			lastNode.Src = node
+			return nodes
+		}
+		nodes = append(nodes, node)
 	default:
 		nodes = append(nodes, node)
 	}
@@ -285,6 +291,21 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 					}
 
 					setLastRightOperand(lastNode, node)
+					return nodes
+				}
+			case *GetPtrNode:
+				parser.Next("ident")
+
+				src := lastNode.Src
+				if src != nil {
+					node := &GetFieldNode{
+						src,
+						parser.ParseValue(),
+						x, y,
+					}
+					lastNode.Src = node
+
+					
 					return nodes
 				}
 			}
@@ -400,6 +421,17 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 		}
 		parser.Next()
 		return nodes
+	case "getptr":
+		parser.Next()
+
+		getPtrNode := &GetPtrNode{
+			X: x, Y: y,
+
+			Src: nil,
+		}
+
+		nodes = append(nodes, getPtrNode)
+		return nodes
 	case "openbracket":
 		lastNode := getLastNode(nodes)
 
@@ -447,6 +479,16 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 			nodes = appendDataType(parser.ParseMap(), nodes)
 
 			return nodes
+		case *GetPtrNode:
+			src := lastNode.Src
+			if src != nil {
+				lastNode.Src = &GetElementNode{
+					[]Node{lastNode.Src},
+					parser.ParseKey(),
+					x, y,
+				}
+				return nodes
+			}
 		case nil:
 			nodes = appendDataType(parser.ParseMap(), nodes)
 
@@ -897,7 +939,7 @@ FIELDS:
 				Func:       funcDecl,
 			})
 		case "comma":
-			parser.Next("ident", "func", "closebrace")
+			parser.Next("ident", "func", "closebrace", "valbitcount")
 		case "closebrace":
 			parser.Next()
 			break FIELDS
@@ -1167,6 +1209,7 @@ func (parser *Parser) ParseValue() []Node {
 		}
 
 		expects := getTokenTypesExpects(currentToken)
+
 		if len(expects) > 0 {
 			nextExpects = expects
 		}

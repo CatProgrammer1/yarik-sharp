@@ -387,3 +387,16 @@ func (setField *SetFieldNode) Position() int {
 func (setField *SetFieldNode) Line() int {
 	return setField.Y
 }
+
+type GetPtrNode struct {
+	Src Node
+
+	X, Y int
+}
+
+func (getptr *GetPtrNode) Position() int {
+	return getptr.X
+}
+func (getptr *GetPtrNode) Line() int {
+	return getptr.Y
+}

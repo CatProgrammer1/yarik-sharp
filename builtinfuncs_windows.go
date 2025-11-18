@@ -4,14 +4,13 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
-	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf16"
 	"unsafe"
 
 	"github.com/elliotchance/orderedmap/v3"
@@ -86,13 +85,22 @@ var (
 			}
 
 			a := v[0]
-			switch reflect.TypeOf(a).Kind() {
-			case reflect.Map:
-				return []any{float64(len(a.(map[any]any)))}
-			case reflect.String:
-				return []any{float64(len(a.(string)))}
+			switch a := a.(type) {
+			case *orderedmap.OrderedMap[any, any]:
+				return []any{float64(a.Len())}
+			case string:
+				return []any{float64(len(a))}
+			case *StructObject:
+				layout := a.Layout()
+				if len(layout) == 0 {
+					return []any{float64(0)}
+				}
+
+				lastFieldLayout := layout[len(layout)-1]
+
+				return []any{float64(lastFieldLayout.Offset + lastFieldLayout.Size)}
 			default:
-				throw("Cannot get lenght of non-string or non-table value.", x, y)
+				throw("Cannot get lenght of non-string, non-table or non-instance value.", x, y)
 			}
 			return nil
 		},
@@ -153,40 +161,66 @@ var (
 		"ptr": func(v ...any) []any {
 			argsCheck(v, 1, 1, "any")
 
+			x, y := v[0].(int), v[1].(int)
+
 			v = v[2:]
 
 			val := v[0]
 			switch val := val.(type) {
 			case float64:
 				return []any{PTR(val)}
-			case *StructObject:
-				return []any{PTR(ptrToFloat(uintptr(unsafe.Pointer(&val.ToMemoryLayout(val.Layout())[0]))))}
-			}
+			default:
+				ptr, _ := valueToPtr(val, x, y)
+				return []any{PTR(ptrToFloat(ptr))}
+				/*case string:
+					utf16p, _ := syscall.UTF16PtrFromString(val)
 
-			return []any{PTR(0)}
+					return []any{PTR(ptrToFloat(uintptr(unsafe.Pointer(utf16p))))}
+				case *StructObject:
+					return []any{PTR(ptrToFloat(uintptr(unsafe.Pointer(&val.ToMemoryLayout(val.Layout())[0]))))}*/
+			}
 		},
 
 		"syscallnt": func(v ...any) []any {
 			argsCheck(v, 2, 2, "string", "table")
 
 			x, y := v[0].(int), v[1].(int)
-
 			v = v[2:]
-
 			procName := v[0].(string)
 			paramsMap := v[1].(*orderedmap.OrderedMap[any, any])
 
 			params := make([]uintptr, paramsMap.Len())
+			buffers := make([]any, paramsMap.Len()) // ← Храним буферы здесь
 			i := 0
+
+			// Подготавливаем параметры и сохраняем буферы
 			for _, v := range paramsMap.AllFromFront() {
-				params[i] = valueToPtr(v, x, y)
+				ptr, buf := valueToPtr(v, x, y)
+				if buf != nil {
+					buffers[i] = buf
+				}
+
+				params[i] = ptr
 				i++
 			}
 
 			ntdll := syscall.NewLazyDLL("ntdll.dll")
 			proc := ntdll.NewProc(procName)
 
+			procerr := proc.Find()
+			if procerr != nil {
+				return []any{PTR(0), PTR(0), procerr}
+			}
+
 			r1, r2, err := proc.Call(params...)
+
+			// Обновляем структуры из памяти
+			for _, v := range paramsMap.AllFromFront() {
+				instance, ok := v.(*StructObject)
+				if ok {
+					instance.FromMemoryLayout(instance.Layout())
+				}
+			}
 
 			return []any{PTR(ptrToFloat(r1)), PTR(ptrToFloat(r2)), err}
 		},
@@ -203,7 +237,7 @@ var (
 
 			asmb, err := os.ReadFile(asmbPath)
 			if err != nil {
-				return []any{0, 0, err}
+				return []any{PTR(0), PTR(0), err}
 			}
 
 			tempAllocs := []uintptr{}
@@ -212,7 +246,7 @@ var (
 			args := make([]uintptr, len(argsAny))
 
 			for i, v := range argsAny {
-				ptr := valueToPtr(v, x, y)
+				ptr, _ := valueToPtr(v, x, y)
 				if ptr == 0 {
 					for _, t := range tempAllocs {
 						virtualFree.Call(t)
@@ -237,6 +271,14 @@ var (
 
 			for _, t := range tempAllocs {
 				virtualFree.Call(t, 0, uintptr(MEM_RELEASE))
+			}
+
+			//Эээ ну типа если в побайтовую версию структуры чото записали то надо же блин коммитнуть изменения на основную
+			for _, v := range argsAny {
+				instance, ok := v.(*StructObject)
+				if ok {
+					instance.FromMemoryLayout(instance.Layout())
+				}
 			}
 
 			virtualFree.Call(addr, 0, uintptr(MEM_RELEASE))
@@ -265,7 +307,7 @@ var (
 			case "number":
 				throw("Use int, float etc. instead of number.", x, y)
 			case "int":
-				return []any{*(*int)(ptr)}
+				return []any{float64(*(*int)(ptr))}
 			case "float":
 				return []any{*(*float64)(ptr)}
 			/*case "table":
@@ -281,48 +323,31 @@ var (
 	}
 )
 
-func valueToPtr(v any, x, y int) uintptr {
-	var ptr uintptr
-
+func valueToPtr(v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
 	case float64:
-		ptr = floatToPtr(val)
-	case PTR:
-		ptr = floatToPtr(float64(val))
-	case *StructObject:
-		mem := val.ToMemoryLayout(val.Layout())
-
-		ptr = uintptr(unsafe.Pointer(&mem[0]))
-	case string:
-		var b []byte
-		if strings.HasSuffix(val, "W") {
-			u16 := utf16.Encode([]rune(val))
-			b = make([]byte, len(u16)*2+2)
-			for i, r := range u16 {
-				b[i*2] = byte(r)
-				b[i*2+1] = byte(r >> 8)
-			}
-
-			b[len(b)-2] = 0
-			b[len(b)-1] = 0
+		if math.Floor(val) == val {
+			return uintptr(uint32(val)), nil
 		} else {
-			b = append([]byte(val), 0)
-
-			fmt.Println(b)
+			return floatToPtr(val), nil
 		}
+	case PTR:
+		return floatToPtr(float64(val)), nil
+	case unsafe.Pointer:
+		return uintptr(val), nil
+	case *StructObject:
+		layout := val.Layout()
+		val.ToMemoryLayout(layout)
 
-		p, _, err := virtualAlloc.Call(0, uintptr(len(b)), uintptr(MEM_RESERVE|MEM_COMMIT), uintptr(PAGE_READWRITE))
-		if p == 0 {
-			throw(fmt.Sprintf("virtualAlloc failed: %v", err), x, y)
-		}
+		return uintptr(unsafe.Pointer(&val.LastMem[0])), val.LastMem
+	case string:
+		utf16p, _ := syscall.UTF16FromString(val)
 
-		pb := unsafe.Slice((*byte)(unsafe.Pointer(p)), len(b))
-		copy(pb, b)
-		ptr = p
-
+		return uintptr(unsafe.Pointer(&utf16p[0])), utf16p
+	case nil:
+		return 0, nil
 	default:
 		throw("Unsupported type.", x, y)
 	}
-
-	return ptr
+	return 0, nil
 }

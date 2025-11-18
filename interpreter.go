@@ -17,11 +17,16 @@ import (
 )
 
 type Scope struct {
-	Data           map[any]any
+	Data           map[any]*Cell
 	Parent         *Scope
 	IsFunc, IsLoop bool
 	ImportedLibs   []string
 	MainScope      bool
+}
+
+type Cell struct {
+	Value any
+	Ptr   unsafe.Pointer
 }
 
 type PTR float64
@@ -176,7 +181,6 @@ func format(v ...any) string {
 }
 
 func importModule(path string, mainScope *Scope) {
-	origPath := path
 	if !strings.HasSuffix(path, fileType) {
 		path += fileType
 	}
@@ -210,28 +214,18 @@ func importModule(path string, mainScope *Scope) {
 
 		moduleData := run(finalPath, path, false)
 
-		origPathNS, ok := strings.CutSuffix(origPath, fileType)
-		if !ok {
-			origPathNS = origPath
-		}
-
-		srcFuncsBI, ok := srcFuncs[origPathNS]
-
-		if ok {
-			for _, v := range srcFuncsBI {
-				mainScope.Data[v.Identifier.Value] = v
-			}
-		}
-
 		for k, v := range moduleData {
-			mainScope.Data[k] = v
+			cell := &Cell{Value: v.Value}
+			cell.Ptr = unsafe.Pointer(&cell.Value)
+
+			mainScope.Data[k] = cell
 		}
 		return
 	}
 	throwNoPos("Invalid file or library '%s'", path)
 }
 
-func sliceToMap[T any](slice []T) *orderedmap.OrderedMap[any, any] {
+/*func sliceToMap[T any](slice []T) *orderedmap.OrderedMap[any, any] {
 	m := orderedmap.NewOrderedMap[any, any]()
 
 	for i, v := range slice {
@@ -244,7 +238,7 @@ func sliceToMap[T any](slice []T) *orderedmap.OrderedMap[any, any] {
 	}
 
 	return m
-}
+}*/
 
 func mapToSlice[T any](m *orderedmap.OrderedMap[any, any]) []T {
 	slice := make([]T, m.Len())
@@ -283,11 +277,11 @@ func mapToSliceAny(m *orderedmap.OrderedMap[any, any]) []any {
 	return slice
 }
 
-func migrateMapToMap(src, dest *orderedmap.OrderedMap[any, any]) {
+/*func migrateMapToMap(src, dest *orderedmap.OrderedMap[any, any]) {
 	for k, v := range src.AllFromFront() {
 		dest.Set(k, v)
 	}
-}
+}*/
 
 func getInterfaceType(v any) string {
 	typeSM := typeName.FindAllStringSubmatch(reflect.ValueOf(v).String(), -1)
@@ -300,7 +294,7 @@ func getInterfaceType(v any) string {
 
 func NewScope(parent *Scope) *Scope {
 	return &Scope{
-		Data:   make(map[any]any),
+		Data:   make(map[any]*Cell),
 		Parent: parent,
 	}
 }
@@ -312,7 +306,10 @@ func (scope *Scope) Add(key, value any) (success bool) {
 	if _, ok := scope.Data[key]; ok {
 		return false
 	}
-	scope.Data[key] = value
+	cell := &Cell{Value: value}
+	cell.Ptr = unsafe.Pointer(&cell.Value)
+
+	scope.Data[key] = cell
 	return true
 }
 
@@ -321,12 +318,15 @@ func (scope *Scope) Set(key, value any, x, y int) (success bool) {
 		return true
 	}
 	if oldvalue, ok := scope.Data[key]; ok {
-		switch oldvalue.(type) {
+		switch oldvalue.Value.(type) {
 		case *Structure, *FuncDec:
 			throw("Assignment to non-variable value", x, y)
 		}
 
-		scope.Data[key] = value
+		cell := scope.Data[key]
+		cell.Value = value
+		cell.Ptr = unsafe.Pointer(&cell.Value)
+
 		return true
 	} else if scope.Parent != nil {
 		return scope.Parent.Set(key, value, x, y)
@@ -337,7 +337,7 @@ func (scope *Scope) Set(key, value any, x, y int) (success bool) {
 func (scope *Scope) Get(key any) any {
 	v, ok := scope.Data[key]
 	if ok {
-		return v
+		return v.Value
 	} else if scope.Parent != nil {
 		return scope.Parent.Get(key)
 	}
@@ -389,7 +389,10 @@ type FieldLayout struct {
 
 func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 	size := layout[len(layout)-1].Offset + layout[len(layout)-1].Size
-	mem := make([]byte, size)
+	var mem []byte
+	if len(s.LastMem) == 0 {
+		mem = make([]byte, size)
+	}
 
 	for _, lf := range layout {
 		val, ok := s.Get(lf.Name)
@@ -435,8 +438,8 @@ func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 			binary.LittleEndian.PutUint64(mem[offset:], toUint64(val))
 		case "instance":
 			sub := val.(*StructObject)
-			subMem := sub.ToMemoryLayout(sub.Layout())
-			binary.LittleEndian.PutUint64(mem[offset:], uint64(uintptr(unsafe.Pointer(&subMem[0]))))
+			sub.ToMemoryLayout(sub.Layout())
+			binary.LittleEndian.PutUint64(mem[offset:], uint64(uintptr(unsafe.Pointer(&sub.LastMem[0]))))
 
 		default:
 			panic("Unsupported field type " + lf.Type)
@@ -519,7 +522,7 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout) {
 	}
 }
 
-func toFloat64(v any) float64 {
+/*func toFloat64(v any) float64 {
 	switch val := v.(type) {
 	case float64:
 		return val
@@ -530,7 +533,7 @@ func toFloat64(v any) float64 {
 	default:
 		return 0
 	}
-}
+}*/
 
 func toInt64(v any) int64 {
 	switch val := v.(type) {
@@ -596,6 +599,7 @@ func (s *StructObject) Layout() []FieldLayout {
 	for _, field := range s.Fields {
 		var size, align uintptr
 		var typ string
+		cell := field.Value
 
 		if field.LayoutType != 0 {
 			prefix := ""
@@ -613,7 +617,7 @@ func (s *StructObject) Layout() []FieldLayout {
 				throwNoPos("Unsupported amount of bits: %d", field.LayoutType)
 			}
 		} else {
-			switch v := field.Value.(type) {
+			switch v := cell.Value.(type) {
 			case *StructObject:
 				sub := v.Layout()
 				last := sub[len(sub)-1]
@@ -651,7 +655,8 @@ func (s *StructObject) Layout() []FieldLayout {
 func (structObj *StructObject) Get(fieldName string) (any, bool) {
 	for _, field := range structObj.Fields {
 		if field.Identifier == fieldName {
-			return field.Value, true
+			cell := field.Value
+			return cell.Value, true
 		}
 	}
 	return nil, false
@@ -675,13 +680,16 @@ func (structObj *StructObject) CheckFormat(format ...[2]string) bool {
 
 func (structObj *StructObject) Set(fieldName string, value any) bool {
 	for _, field := range structObj.Fields {
+		cell := field.Value
 		if field.Method {
-			method := field.Value.(*FuncDec)
+			method := cell.Value.(*FuncDec)
 
 			throw("Cannot assign value to a instance's method.", method.X, method.Y)
 		}
 		if field.Identifier == fieldName {
-			field.Value = value
+			cell.Value = value
+			cell.Ptr = unsafe.Pointer(&cell.Value)
+
 			return true
 		}
 	}
@@ -692,7 +700,7 @@ type Field struct {
 	Identifier string
 	Method     bool
 	LayoutType int8
-	Value      any
+	Value      *Cell
 }
 
 func newInstance(name string, fields []*Field) *StructObject {
@@ -784,6 +792,34 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 		return v
 	case *StructNode:
 		return inter.NewStructObject(node)
+	case *GetPtrNode:
+		if node.Src == nil {
+			throw("Attempt to get a pointer of nothing.", node.X, node.Y)
+		}
+		srcNode := node.Src
+
+		scope := inter.CurrentScope
+
+		switch srcNode := srcNode.(type) {
+		case *IdentNode:
+			identifier := srcNode.Value
+
+			cell, ok := scope.Data[identifier]
+			if !ok {
+				throw("Attempt to get a pointer of non-existing value.", node.X, node.Y)
+			}
+
+			switch value := cell.Value.(type) {
+			case *StructObject:
+				ptr, _ := valueToPtr(value, node.X, node.Y)
+
+				return unsafe.Pointer(ptr)
+			default:
+				return cell.Ptr
+			}
+		default:
+
+		}
 	case *GetFieldNode:
 		structObjNode, fieldNodes := inter.GetStructAndFieldNames(node, []Node{})
 		if structObjNode == nil {
@@ -833,6 +869,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 
 func (inter *Interpreter) GetNodeValueS(nodes []Node, x, y int) any {
 	if len(nodes) > 1 || len(nodes) == 0 {
+		fmt.Println(nodes, nodes[0].(*GetPtrNode), nodes[1].(*FuncCall).Func)
 		throw("Value has more than one value or is empty", x, y)
 	}
 	return inter.GetNodeValue(nodes[0])
@@ -1185,11 +1222,16 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		}
 		fieldDecl.Func.Self = structObject
 
+		cell := &Cell{
+			Value: fieldDecl.Func,
+		}
+		cell.Ptr = unsafe.Pointer(&cell.Value)
+
 		fields = append(fields, &Field{
 			Identifier: fieldDecl.Identifier,
 			Method:     fieldDecl.Method,
 			LayoutType: fieldDecl.Bits,
-			Value:      fieldDecl.Func,
+			Value:      cell,
 		})
 	}
 
@@ -1201,9 +1243,14 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 			throw("Attempt to assign a value for a method of structure '%s'.", structObjNode.X, structObjNode.Y, identifier)
 		}
 
+		cell := &Cell{
+			Value: inter.GetNodeValueS(fieldNode.Value, fieldNode.Identifier.X, fieldNode.Identifier.Y),
+		}
+		cell.Ptr = unsafe.Pointer(&cell.Value)
+
 		fields = append(fields, &Field{
 			Identifier: fieldNode.Identifier.Value,
-			Value:      inter.GetNodeValueS(fieldNode.Value, fieldNode.Identifier.X, fieldNode.Identifier.Y),
+			Value:      cell,
 		})
 	}
 
@@ -1377,7 +1424,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 	return false, false, nil
 }
 
-func (inter *Interpreter) Complete(info bool) map[any]any {
+func (inter *Interpreter) Complete(info bool) map[any]*Cell {
 	mainScope := NewScope(nil)
 	mainScope.MainScope = true
 

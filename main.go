@@ -11,10 +11,6 @@ import (
 
 	"github.com/elliotchance/orderedmap/v3"
 )
-import (
-	"syscall"
-	"unsafe"
-)
 
 const (
 	plName           = "Yarik#"
@@ -213,7 +209,7 @@ func getAbsPath(relPath string) string {
 	return abs
 }
 
-func run(fileAbs, fileRel string, info bool) map[any]any {
+func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 	if !strings.HasSuffix(fileAbs, fileType) {
 		fileAbs += fileType
 	}
@@ -239,7 +235,7 @@ func run(fileAbs, fileRel string, info bool) map[any]any {
 
 // ? go build -o bin/yks.exe yks
 func main() { //*go run yks runinfo test.yks
-	dll := syscall.NewLazyDLL("test_struct.dll")
+	/*dll := syscall.NewLazyDLL("test_struct.dll")
 	proc := dll.NewProc("check_OBJECT_ATTRIBUTES")
 
 	utf16S, _ := syscall.UTF16FromString("Sigma")
@@ -270,7 +266,7 @@ func main() { //*go run yks runinfo test.yks
 	proc.Call(uintptr(unsafe.Pointer(&obj.ToMemoryLayout(layout)[0])))
 
 	obj.FromMemoryLayout(layout)
-	fmt.Println(obj.Fields[0].Value)
+	fmt.Println(obj.Fields[0].Value)*/
 
 	commands["build"] = func(args []string) {
 		//Lox
@@ -285,6 +281,16 @@ func main() { //*go run yks runinfo test.yks
 		path := args[0]
 
 		run(getAbsPath(path), path, true)
+	}
+	commands["tokens"] = func(args []string) {
+		path := args[0]
+
+		src, err := getFileString(path)
+		handle(err)
+
+		lexer := NewLexer(src)
+
+		fmt.Println(lexer.GetTokens())
 	}
 	commands["version"] = func(args []string) {
 		fmt.Printf("%s version %s%d.%d.%d-%s", plName, shortennedPLName, major, minor, patch, stage)
