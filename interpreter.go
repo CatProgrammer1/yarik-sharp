@@ -18,6 +18,7 @@ import (
 
 type Scope struct {
 	Data           map[any]*Cell
+	Pointers       map[uintptr]*Cell
 	Parent         *Scope
 	IsFunc, IsLoop bool
 	ImportedLibs   []string
@@ -221,6 +222,7 @@ func importModule(path string, mainScope *Scope) {
 			cell.Ptr = unsafe.Pointer(&cell.Value)
 
 			mainScope.Data[k] = cell
+			mainScope.Pointers[uintptr(cell.Ptr)] = cell
 		}
 		return
 	}
@@ -296,8 +298,9 @@ func getInterfaceType(v any) string {
 
 func NewScope(parent *Scope) *Scope {
 	return &Scope{
-		Data:   make(map[any]*Cell),
-		Parent: parent,
+		Data:     make(map[any]*Cell),
+		Pointers: make(map[uintptr]*Cell),
+		Parent:   parent,
 	}
 }
 
@@ -309,9 +312,16 @@ func (scope *Scope) Add(key, value any) (success bool) {
 		return false
 	}
 	cell := &Cell{Value: value}
-	cell.Ptr = unsafe.Pointer(&cell.Value)
+
+	switch value := value.(type) {
+	case *StructObject:
+		cell.Ptr = unsafe.Pointer(value.Address())
+	default:
+		cell.Ptr = unsafe.Pointer(&cell.Value)
+	}
 
 	scope.Data[key] = cell
+	scope.Pointers[uintptr(cell.Ptr)] = cell
 	return true
 }
 
@@ -342,6 +352,16 @@ func (scope *Scope) Get(key any) any {
 		return v.Value
 	} else if scope.Parent != nil {
 		return scope.Parent.Get(key)
+	}
+	return nil
+}
+
+func (scope *Scope) GetWithAddress(ptr uintptr) any {
+	v, ok := scope.Pointers[ptr]
+	if ok {
+		return v.Value
+	} else if scope.Parent != nil {
+		return scope.GetWithAddress(ptr)
 	}
 	return nil
 }
@@ -531,6 +551,13 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout) {
 			panic("Unsupported field type " + lf.Type)
 		}
 	}
+}
+
+func (s *StructObject) Address() uintptr {
+	if len(s.LastMem) == 0 {
+		return 0
+	}
+	return uintptr(unsafe.Pointer(&s.LastMem[0]))
 }
 
 /*func toFloat64(v any) float64 {
@@ -1006,7 +1033,7 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 	}
 
 	if funcDec.Template != nil {
-		args := []any{node.X, node.Y}
+		args := []any{node.X, node.Y, inter}
 
 		argsValues := [][]Node{}
 		for _, argNode := range node.Arguments {
@@ -1441,7 +1468,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 	return false, false, nil
 }
 
-func (inter *Interpreter) Complete(info bool) map[any]*Cell {
+func (inter *Interpreter) Complete(logenv bool) map[any]*Cell {
 	mainScope := NewScope(nil)
 	mainScope.MainScope = true
 
@@ -1455,8 +1482,10 @@ func (inter *Interpreter) Complete(info bool) map[any]*Cell {
 		inter.CompleteNode(node)
 	}
 
-	if info {
+	if logenv {
 		fmt.Println(mainScope.Data)
 	}
+	clear(mainScope.Pointers)
+
 	return mainScope.Data
 }

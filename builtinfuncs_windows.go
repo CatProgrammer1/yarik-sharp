@@ -5,7 +5,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -17,30 +16,24 @@ import (
 )
 
 const (
-	MEM_COMMIT             = 0x1000
-	MEM_RESERVE            = 0x2000
-	PAGE_EXECUTE_READWRITE = 0x40
-	MEM_RELEASE            = 0x8000
-	PAGE_READWRITE         = 0x04
+	BUILTIN_SPECIALS = 3
 )
 
 var (
-	kernel32     = syscall.NewLazyDLL("kernel32.dll")
-	virtualAlloc = kernel32.NewProc("VirtualAlloc")
-	virtualFree  = kernel32.NewProc("VirtualFree")
-
 	builtinFuncs = map[string]func(v ...any) []any{
 		"OS_NAME": func(v ...any) []any {
 			return []any{runtime.GOOS}
 		},
+
 		"print": func(v ...any) []any {
-			fmt.Println(format(v[2:]...))
+			fmt.Println(format(v[BUILTIN_SPECIALS:]...))
 			return nil
 		},
+
 		"delete": func(v ...any) []any {
 			argsCheck(v, 2, 2, "table", "any")
 
-			v = v[2:]
+			v = v[BUILTIN_SPECIALS:]
 
 			table := v[0].(*orderedmap.OrderedMap[any, any])
 			key := v[1]
@@ -48,6 +41,7 @@ var (
 			table.Delete(key)
 			return nil
 		},
+
 		"sleep": func(v ...any) []any {
 			x, y := v[0].(int), v[1].(int)
 
@@ -55,7 +49,7 @@ var (
 				throw("Function must have one argument.", x, y)
 			}
 
-			v = v[2:]
+			v = v[BUILTIN_SPECIALS:]
 
 			switch t := v[0].(type) {
 			case float64:
@@ -65,10 +59,11 @@ var (
 			}
 			return nil
 		},
+
 		"throw": func(v ...any) []any {
 			x, y := v[0].(int), v[1].(int)
 
-			v = v[2:]
+			v = v[BUILTIN_SPECIALS:]
 			if len(v) <= 0 {
 				throw("Function requires one or more arguments.", x, y)
 			}
@@ -76,10 +71,11 @@ var (
 			throw(format(v...), x, y)
 			return nil
 		},
+
 		"len": func(v ...any) []any {
 			x, y := v[0].(int), v[1].(int)
 
-			v = v[2:]
+			v = v[BUILTIN_SPECIALS:]
 			if len(v) <= 0 && len(v) > 1 {
 				throw("Function requires only one argument.", x, y)
 			}
@@ -105,19 +101,19 @@ var (
 			return nil
 		},
 		"tostr": func(v ...any) []any {
-			return []any{format(v[2:]...)}
+			return []any{format(v[BUILTIN_SPECIALS:]...)}
 		},
 		"gettype": func(v ...any) []any {
 			argsCheck(v, 1, 1, "any")
 
-			v = v[2:]
+			v = v[BUILTIN_SPECIALS:]
 
 			return []any{getValueType(v[0])}
 		},
 		"tonum": func(v ...any) []any {
 			x, y := v[0].(int), v[1].(int)
 
-			v = v[2:]
+			v = v[BUILTIN_SPECIALS:]
 			if len(v) <= 0 && len(v) > 1 {
 				throw("Function requires only one argument.", x, y)
 			}
@@ -141,7 +137,7 @@ var (
 		"bytestostr": func(v ...any) []any {
 			argsCheck(v, 1, 1, "table")
 
-			v = v[2:]
+			v = v[BUILTIN_SPECIALS:]
 
 			b := v[0].(*orderedmap.OrderedMap[any, any])
 
@@ -151,41 +147,21 @@ var (
 		"unicodetostr": func(v ...any) []any {
 			argsCheck(v, 1, 1, "number")
 
-			v = v[2:]
+			v = v[BUILTIN_SPECIALS:]
 
 			r := rune(v[0].(float64))
 
 			return []any{string(r)}
 		},
 
-		"ptr": func(v ...any) []any {
-			argsCheck(v, 1, 1, "any")
-
-			x, y := v[0].(int), v[1].(int)
-
-			v = v[2:]
-
-			val := v[0]
-			switch val := val.(type) {
-			case float64:
-				return []any{PTR(val)}
-			default:
-				ptr, _ := valueToPtr(val, x, y)
-				return []any{PTR(ptrToFloat(ptr))}
-				/*case string:
-					utf16p, _ := syscall.UTF16PtrFromString(val)
-
-					return []any{PTR(ptrToFloat(uintptr(unsafe.Pointer(utf16p))))}
-				case *StructObject:
-					return []any{PTR(ptrToFloat(uintptr(unsafe.Pointer(&val.ToMemoryLayout(val.Layout())[0]))))}*/
-			}
-		},
-
 		"syscallnt": func(v ...any) []any {
 			argsCheck(v, 2, 2, "string", "table")
 
 			x, y := v[0].(int), v[1].(int)
-			v = v[2:]
+			inter := v[2].(*Interpreter)
+
+			v = v[BUILTIN_SPECIALS:]
+
 			procName := v[0].(string)
 			paramsMap := v[1].(*orderedmap.OrderedMap[any, any])
 
@@ -215,74 +191,22 @@ var (
 			r1, r2, err := proc.Call(params...)
 
 			// Обновляем структуры из памяти
-			for _, v := range paramsMap.AllFromFront() {
-				instance, ok := v.(*StructObject)
-				if ok {
-					instance.FromMemoryLayout(instance.Layout())
+			for _, ptr := range params {
+				value := inter.CurrentScope.GetWithAddress(ptr)
+				if value == nil {
+					continue
+				}
+
+				switch instance := value.(type) {
+				case *StructObject:
+					fmt.Println("Yessir")
+					layout := instance.Layout()
+
+					instance.FromMemoryLayout(layout)
 				}
 			}
 
 			return []any{PTR(ptrToFloat(r1)), PTR(ptrToFloat(r2)), err}
-		},
-
-		"callbin": func(v ...any) []any {
-			argsCheck(v, 2, 2, "string", "table")
-
-			x, y := v[0].(int), v[1].(int)
-
-			v = v[2:]
-
-			asmbPath := v[0].(string)
-			argsTable := v[1].(*orderedmap.OrderedMap[any, any])
-
-			asmb, err := os.ReadFile(asmbPath)
-			if err != nil {
-				return []any{PTR(0), PTR(0), err}
-			}
-
-			tempAllocs := []uintptr{}
-
-			argsAny := mapToSliceAny(argsTable)
-			args := make([]uintptr, len(argsAny))
-
-			for i, v := range argsAny {
-				ptr, _ := valueToPtr(v, x, y)
-				if ptr == 0 {
-					for _, t := range tempAllocs {
-						virtualFree.Call(t)
-					}
-					return []any{PTR(0), PTR(0), nil}
-				}
-				tempAllocs = append(tempAllocs, ptr)
-
-				args[i] = ptr
-			}
-
-			addr, _, err := virtualAlloc.Call(0, uintptr(len(asmb)), uintptr(MEM_RESERVE|MEM_COMMIT), uintptr(PAGE_EXECUTE_READWRITE))
-			if addr == 0 {
-				return []any{PTR(0), PTR(0), err}
-			}
-
-			ptr := unsafe.Pointer(addr)
-			dst := unsafe.Slice((*byte)(ptr), len(asmb))
-			copy(dst, asmb)
-
-			r1, r2, errno := syscall.SyscallN(addr, args...)
-
-			for _, t := range tempAllocs {
-				virtualFree.Call(t, 0, uintptr(MEM_RELEASE))
-			}
-
-			//Эээ ну типа если в побайтовую версию структуры чото записали то надо же блин коммитнуть изменения на основную
-			for _, v := range argsAny {
-				instance, ok := v.(*StructObject)
-				if ok {
-					instance.FromMemoryLayout(instance.Layout())
-				}
-			}
-
-			virtualFree.Call(addr, 0, uintptr(MEM_RELEASE))
-			return []any{PTR(ptrToFloat(r1)), PTR(ptrToFloat(r2)), error(errno)}
 		},
 
 		"ptrconv": func(v ...any) []any {
@@ -290,7 +214,7 @@ var (
 
 			x, y := v[0].(int), v[1].(int)
 
-			v = v[2:]
+			v = v[BUILTIN_SPECIALS:]
 
 			ptrUintptr := floatToPtr(v[0].(float64))
 			if ptrUintptr == 0 {

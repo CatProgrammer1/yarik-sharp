@@ -17,7 +17,7 @@ const (
 	shortennedPLName = "yks"
 
 	fileType            = ".yks"
-	major, minor, patch = 1, 5, 1
+	major, minor, patch = 1, 6, 2
 	stage               = "beta"
 )
 
@@ -26,6 +26,32 @@ var (
 	commands = make(map[string]func(args []string))
 	libs     = filepath.Join(getParentPath(getParentPath(getSelfPath())), "src")
 )
+
+func argsCheck(v []any, min, max int, expectedDataTypes ...string) {
+	if min == 0 && max == 0 {
+		return
+	}
+
+	x, y := v[0].(int), v[1].(int)
+
+	if len(v) < min+3 {
+		throw("Attempt to pass less arguments to a function call than function actually need, minimum is %d.", x, y, min)
+	} else if len(v) > max+3 {
+		throw("Attempt to pass more arguments to a function call than function actually need, maximum is %d.", x, y, max)
+	} else {
+		args := v[3:]
+
+		for i := 0; i < min; i++ {
+			expectedDataType := expectedDataTypes[i]
+
+			argument := args[i]
+
+			if !checkDataType(expectedDataType, argument) {
+				throw("Invalid argument #%d. Expected %s.", x, y, i+1, expectedDataType)
+			}
+		}
+	}
+}
 
 func floatToPtr(f float64) uintptr {
 	return uintptr(math.Float64bits(f))
