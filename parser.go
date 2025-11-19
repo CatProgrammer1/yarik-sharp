@@ -15,7 +15,7 @@ var (
 		"number,ident,string,bool,nil,openbracket,opensqbrac,newstruct": {"openbracket", "opensqbrac", "add", "bitor", "sub", "div", "mul", "pow",
 			"equals", "notequals", "greater", "less", "greatereq", "lesseq", "and", "or", "indexstruct"},
 		"add,sub,div,mul,pow,equals,notequals,greater,less,greatereq,lesseq,bitor,and,or,return,getptr": {"number", "ident", "string", "bool", "openbracket", "nil"},
-		"opensqbrac": {"opensqbrac"},
+		"opensqbrac,getptr": {"opensqbrac"},
 	}
 	binOpsList = []string{
 		"add", "sub", "div", "mul", "pow",
@@ -1150,14 +1150,17 @@ BRACKETPAR:
 }
 
 func getTokenTypesExpects(token Token) []string {
+	allExpects := []string{}
+
 	for k, expects := range tokenTypesExpects {
 		types := strings.Split(k, ",")
 		if !slices.Contains(types, token.Type) {
 			continue
 		}
-		return expects
+		allExpects = append(allExpects, expects...)
 	}
-	return []string{}
+
+	return allExpects
 }
 
 func (parser *Parser) ParseReturnValue() [][]Node {
@@ -1174,17 +1177,6 @@ PAR_RETURNVAL:
 			parser.Unexpect("comma")
 			parser.Next()
 		default:
-			/*if len(nextExpects) > 0 && !slices.Contains(nextExpects, currentToken.Type) {
-				values = append(values, value)
-				value = []Node{}
-			}
-
-			expects := getTokenTypesExpects(currentToken)
-			if len(expects) > 0 {
-				nextExpects = expects
-			}
-
-			value = parser.Parse(value)*/
 
 			values = append(values, parser.ParseValue())
 

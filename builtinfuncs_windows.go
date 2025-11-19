@@ -139,7 +139,7 @@ var (
 
 			v = v[BUILTIN_SPECIALS:]
 
-			b := v[0].(*orderedmap.OrderedMap[any, any])
+			b := v[0].(*orderedmap.OrderedMap[Cell, *Cell])
 
 			return []any{string(mapToSlice[byte](b))}
 		},
@@ -199,7 +199,6 @@ var (
 
 				switch instance := value.(type) {
 				case *StructObject:
-					fmt.Println("Yessir")
 					layout := instance.Layout()
 
 					instance.FromMemoryLayout(layout)
@@ -264,6 +263,8 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 		val.ToMemoryLayout(layout)
 
 		return uintptr(unsafe.Pointer(&val.LastMem[0])), val.LastMem
+	case []any:
+		return uintptr(unsafe.Pointer(&val[0])), val
 	case string:
 		utf16p, _ := syscall.UTF16FromString(val)
 

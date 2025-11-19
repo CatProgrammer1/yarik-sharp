@@ -30,6 +30,19 @@ type Cell struct {
 	Ptr   unsafe.Pointer
 }
 
+func CLPTR(v any) *Cell {
+	cell := &Cell{Value: v}
+	cell.Ptr = unsafe.Pointer(&cell.Ptr)
+
+	return cell
+}
+
+func CL(v any) Cell {
+	cell := Cell{Value: v}
+
+	return cell
+}
+
 type PTR float64
 
 func checkType[T any](v any) bool {
@@ -139,7 +152,7 @@ func format(v ...any) string {
 		}
 
 		switch a := a.(type) {
-		case *orderedmap.OrderedMap[*Cell, *Cell]:
+		case *orderedmap.OrderedMap[Cell, *Cell]:
 			mapFormat := "{%s}"
 			elemFormat := "[%s]: %s, "
 
@@ -166,7 +179,7 @@ func format(v ...any) string {
 			}
 
 			formated += fmt.Sprintf(structFormat, a.Identifier, fields) + suffix
-		case PTR:
+		case PTR, unsafe.Pointer:
 			formated += fmt.Sprintf("%#x", a) + suffix
 		case nil:
 			for k, t := range tokenTypes {
@@ -229,7 +242,7 @@ func importModule(path string, mainScope *Scope) {
 	throwNoPos("Invalid file or library '%s'", path)
 }
 
-/*func sliceToMap[T any](slice []T) *orderedmap.OrderedMap[any, any] {
+/*func sliceToMap[T any](slice []T) *orderedmap.OrderedMap[Cell, *Cell] {
 	m := orderedmap.NewOrderedMap[any, any]()
 
 	for i, v := range slice {
@@ -244,7 +257,7 @@ func importModule(path string, mainScope *Scope) {
 	return m
 }*/
 
-func mapToSlice[T any](m *orderedmap.OrderedMap[any, any]) []T {
+func mapToSlice[T any](m *orderedmap.OrderedMap[Cell, *Cell]) []T {
 	slice := make([]T, m.Len())
 
 	var t T
@@ -254,34 +267,34 @@ func mapToSlice[T any](m *orderedmap.OrderedMap[any, any]) []T {
 
 		switch kind {
 		case reflect.Uint8:
-			if reflect.ValueOf(v).Kind() == reflect.Float64 {
+			if reflect.ValueOf(v.Value).Kind() == reflect.Float64 {
 				fk, _ := numberToFloat64(k)
-				slice[int(fk)] = any(byte(v.(float64))).(T)
+				slice[int(fk)] = any(byte(v.Value.(float64))).(T)
 				break
 			}
 			fallthrough
 		default:
 			fk, _ := numberToFloat64(k)
-			slice[int(fk)] = v.(T)
+			slice[int(fk)] = v.Value.(T)
 		}
 	}
 
 	return slice
 }
 
-func mapToSliceAny(m *orderedmap.OrderedMap[any, any]) []any {
+func mapToSliceAny(m *orderedmap.OrderedMap[Cell, *Cell]) []any {
 	slice := make([]any, m.Len())
 
 	i := 0
 	for _, v := range m.AllFromFront() {
-		slice[i] = v
+		slice[i] = v.Value
 		i++
 	}
 
 	return slice
 }
 
-/*func migrateMapToMap(src, dest *orderedmap.OrderedMap[any, any]) {
+/*func migrateMapToMap(src, dest *orderedmap.OrderedMap[Cell, *Cell]) {
 	for k, v := range src.AllFromFront() {
 		dest.Set(k, v)
 	}
@@ -362,6 +375,16 @@ func (scope *Scope) GetWithAddress(ptr uintptr) any {
 		return v.Value
 	} else if scope.Parent != nil {
 		return scope.GetWithAddress(ptr)
+	}
+	return nil
+}
+
+func (scope *Scope) GetCell(key any) *Cell {
+	v, ok := scope.Data[key]
+	if ok {
+		return v
+	} else if scope.Parent != nil {
+		return scope.GetCell(key)
 	}
 	return nil
 }
@@ -851,10 +874,16 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 				throw("Attempt to get a pointer of non-existing value.", node.X, node.Y)
 			}
 
-			switch cell.Value.(type) {
+			switch cellVal := cell.Value.(type) {
 			case *StructObject:
 				ptr, _ := valueToPtr(cell.Value, node.X, node.Y)
-				fmt.Println("POINTER STRUCT")
+
+				return unsafe.Pointer(ptr)
+			case *orderedmap.OrderedMap[Cell, *Cell]:
+				sliceKind := mapToSliceAny(cellVal)
+
+				ptr, _ := valueToPtr(sliceKind, node.X, node.Y)
+
 				return unsafe.Pointer(ptr)
 			default:
 				return cell.Ptr
@@ -899,7 +928,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 		}
 
 		switch table := table.(type) {
-		case *orderedmap.OrderedMap[any, any], string:
+		case *orderedmap.OrderedMap[Cell, *Cell], string:
 			return inter.GetTableValueByKeys(table, keys, node, 0)
 		default:
 			throw("Cannot index non-table or non-string value.", node.X, node.Y)
@@ -911,7 +940,6 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 
 func (inter *Interpreter) GetNodeValueS(nodes []Node, x, y int) any {
 	if len(nodes) > 1 || len(nodes) == 0 {
-		fmt.Println(nodes, nodes[0].(*GetPtrNode), nodes[1].(*FuncCall).Func)
 		throw("Value has more than one value or is empty", x, y)
 	}
 	return inter.GetNodeValue(nodes[0])
@@ -941,9 +969,14 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 
 	key := keys[index]
 
+	_, iscell := table.(*Cell)
+	if iscell {
+		table = table.(*Cell).Value
+	}
+
 	switch table := table.(type) {
-	case *orderedmap.OrderedMap[any, any]:
-		elem := table.GetElement(key)
+	case *orderedmap.OrderedMap[Cell, *Cell]:
+		elem := table.GetElement(Cell{Value: key}).Value
 		var val any
 		if elem != nil {
 			val = elem.Value
@@ -1010,13 +1043,13 @@ func (inter *Interpreter) GetFieldValueByNames(structObj *StructObject, fieldNam
 	return val
 }
 
-func (inter *Interpreter) GetMap(node *MapNode) *orderedmap.OrderedMap[any, any] {
-	m := orderedmap.NewOrderedMap[any, any]()
+func (inter *Interpreter) GetMap(node *MapNode) *orderedmap.OrderedMap[Cell, *Cell] {
+	m := orderedmap.NewOrderedMap[Cell, *Cell]()
 
 	for _, element := range node.Map {
 		key, value := inter.GetNodeValueS(element.Key, element.X, element.Y), inter.GetNodeValueS(element.Value, element.X, element.Y)
 
-		m.Set(key, value)
+		m.Set(CL(key), CLPTR(value))
 	}
 
 	return m
@@ -1115,23 +1148,23 @@ func (inter *Interpreter) CompeleteBody(body []Node, isFunc, isLoop bool, addToS
 	return false, false, nil
 }
 
-func (inter *Interpreter) SetTableElementValue(table *orderedmap.OrderedMap[any, any], keys []any, value any, index int) {
+func (inter *Interpreter) SetTableElementValue(table *orderedmap.OrderedMap[Cell, *Cell], keys []any, value any, index int) {
 	if index >= len(keys) {
 		return
 	}
 
 	key := keys[index]
 
-	elem := table.GetElement(key)
-	switch elem := elem.Value.(type) {
-	case *orderedmap.OrderedMap[any, any]:
+	elem := table.GetElement(CL(key))
+	switch elem := elem.Value.Value.(type) {
+	case *orderedmap.OrderedMap[Cell, *Cell]:
 		if index+1 >= len(keys) {
-			table.Set(key, value)
+			table.Set(CL(key), CLPTR(value))
 			break
 		}
 		inter.SetTableElementValue(elem, keys, value, index+1)
 	default:
-		table.Set(key, value)
+		table.Set(CL(key), CLPTR(value))
 	}
 }
 
@@ -1189,7 +1222,7 @@ func (inter *Interpreter) SetElementValue(node *SetElem) {
 	value := inter.GetNodeValueS(node.Value, node.X, node.Y)
 
 	switch table := table.(type) {
-	case *orderedmap.OrderedMap[any, any]:
+	case *orderedmap.OrderedMap[Cell, *Cell]:
 		inter.SetTableElementValue(table, keys, value, 0)
 	default:
 		throw("Cannot index non-table value", node.X, node.Y)
@@ -1448,7 +1481,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		keyIdent, valueIdent := node.KeyIdent, node.ValueIdent
 
 		switch cycleValue := cycleValue.(type) {
-		case *orderedmap.OrderedMap[any, any]:
+		case *orderedmap.OrderedMap[Cell, *Cell]:
 			for key, value := range cycleValue.AllFromFront() {
 				end, skip, returnValue := inter.CompeleteBody(node.Body, false, true, [2]any{keyIdent.Value, key}, [2]any{valueIdent.Value, value})
 
