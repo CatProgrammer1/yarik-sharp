@@ -3,4 +3,5 @@
 *.zip
 *.asm
 *.bin
+*.yks
 build/
