@@ -308,7 +308,7 @@ var (
 func valueToPtr(v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
 	case float64:
-		if math.Floor(val) == val {
+		if math.Trunc(val) == val {
 			return uintptr(uint32(val)), nil
 		} else {
 			return floatToPtr(val), nil

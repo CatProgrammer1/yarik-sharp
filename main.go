@@ -11,6 +11,7 @@ import (
 
 	"github.com/elliotchance/orderedmap/v3"
 )
+import "unsafe"
 
 const (
 	plName           = "Yarik#"
@@ -26,6 +27,10 @@ var (
 	commands = make(map[string]func(args []string))
 	libs     = filepath.Join(getParentPath(getParentPath(getSelfPath())), "src")
 )
+
+func floatIsInt(f float64) bool {
+	return math.Trunc(f) == f
+}
 
 func argsCheck(v []any, min, max int, expectedDataTypes ...string) {
 	if min == 0 && max == 0 {
@@ -81,17 +86,13 @@ func numberToFloat64(n any) (float64, bool) {
 }
 
 func mustNTOF64(n any) float64 {
-	v := reflect.ValueOf(n)
-	switch v.Kind() {
-	case reflect.Float32, reflect.Float64:
-		return v.Convert(reflect.TypeOf(float64(0))).Float()
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(v.Int())
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return float64(v.Uint())
-	default:
-		return 0
+	switch n := n.(type) {
+	case float64:
+		return n
+	case int64:
+		return float64(n)
 	}
+	return 0
 }
 
 func getValueType(v any) string {
@@ -100,7 +101,7 @@ func getValueType(v any) string {
 		return "void"
 	case string:
 		return "string"
-	case float64:
+	case float64, int64:
 		return "number"
 	case bool:
 		return "bool"
@@ -127,13 +128,27 @@ func checkDataType(expected string, v any) bool {
 
 		return ok
 	case "ptr":
-		_, ok := v.(PTR)
+		oks := []bool{}
 
-		return ok
+		_, ok := v.(PTR)
+		oks = append(oks, ok)
+
+		_, ok = v.(unsafe.Pointer)
+		oks = append(oks, ok)
+
+		for _, ok := range oks {
+			if ok {
+				return ok
+			}
+		}
+		return false
 	case "number":
 		oks := []bool{}
 
 		_, ok := v.(float64)
+		oks = append(oks, ok)
+
+		_, ok = v.(int64)
 		oks = append(oks, ok)
 
 		_, ok = v.(uintptr)
@@ -148,6 +163,14 @@ func checkDataType(expected string, v any) bool {
 			}
 		}
 		return false
+	case "int":
+		_, ok := v.(int64)
+
+		return ok
+	case "float":
+		_, ok := v.(float64)
+
+		return ok
 	case "bool":
 		_, ok := v.(bool)
 

@@ -44,7 +44,6 @@ var (
 		"-": "sub",
 		"/": "div",
 		"*": "mul",
-		"^": "pow",
 		"|": "bitor",
 		"&": "getptr",
 

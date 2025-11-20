@@ -31,8 +31,17 @@ type Cell struct {
 }
 
 func CLPTR(v any) *Cell {
-	cell := &Cell{Value: v}
-	cell.Ptr = unsafe.Pointer(&cell.Ptr)
+	var cell *Cell
+	cell = &Cell{Value: v}
+	switch f := v.(type) {
+	case float64:
+		if floatIsInt(f) {
+			cell = &Cell{Value: int64(f)}
+		} else {
+			cell = &Cell{Value: f}
+		}
+	}
+	cell.Ptr = unsafe.Pointer(&cell.Value)
 
 	return cell
 }
@@ -59,87 +68,6 @@ var (
 	}
 
 	typeName      = regexp.MustCompile(`<\*(?:[^.]+\.)?([^ ]+)`)
-	binOperations = map[string]func(a, b any, x, y int) any{
-		"add": func(a, b any, x, y int) any {
-			if checkDataType("number", a) && checkDataType("number", b) {
-
-				return mustNTOF64(a) + mustNTOF64(b)
-			} else if checkType[string](a) && checkType[string](b) {
-
-				return a.(string) + b.(string)
-			} else if checkType[string](a) && checkDataType("number", b) ||
-				checkDataType("number", a) && checkType[string](b) {
-
-				return fmt.Sprint(a, b)
-			}
-			throw("Unable to perform operation add or concat on non-number and non-string values.", x, y)
-			return nil
-		},
-		"sub": func(a, b any, x, y int) any {
-			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw("Unable to perform operation sub on non-number values.", x, y)
-			}
-			return mustNTOF64(a) - mustNTOF64(b)
-		},
-		"div": func(a, b any, x, y int) any {
-			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw("Unable to perform operation div on non-number values.", x, y)
-			}
-			return mustNTOF64(a) / mustNTOF64(b)
-		},
-		"mul": func(a, b any, x, y int) any {
-			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw("Unable to perform operation mul on non-number values.", x, y)
-			}
-			return mustNTOF64(a) * mustNTOF64(b)
-		},
-		"pow": func(a, b any, x, y int) any {
-			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw("Unable to perform operation pow on non-number values.", x, y)
-			}
-			return math.Pow(mustNTOF64(a), mustNTOF64(b))
-		},
-
-		"bitor": func(a, b any, x, y int) any {
-			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw("Unable to perform operation bitor on non-number values.", x, y)
-			}
-
-			return float64(int(mustNTOF64(a)) | int(mustNTOF64(b)))
-		},
-
-		"greater": func(a, b any, x, y int) any {
-			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw("Unable to perform operation greater non-number values.", x, y)
-			}
-			return mustNTOF64(a) > mustNTOF64(b)
-		},
-		"less": func(a, b any, x, y int) any {
-			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw("Unable to perform operation less non-number values.", x, y)
-			}
-			return mustNTOF64(a) < mustNTOF64(b)
-		},
-		"greatereq": func(a, b any, x, y int) any {
-			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw("Unable to perform operation greater-equals non-number values.", x, y)
-			}
-			return mustNTOF64(a) >= mustNTOF64(b)
-		},
-		"lesseq": func(a, b any, x, y int) any {
-			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw("Unable to perform operation less-equals non-number values.", x, y)
-			}
-			return mustNTOF64(a) <= mustNTOF64(b)
-		},
-
-		"equals": func(a, b any, x, y int) any {
-			return a == b
-		},
-		"notequals": func(a, b any, x, y int) any {
-			return a != b
-		},
-	}
 )
 
 func format(v ...any) string {
@@ -522,35 +450,35 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout) {
 		switch lf.Type {
 		case "int8":
 			v := int8(mem[offset])
-			s.Set(lf.Name, float64(v))
+			s.Set(lf.Name, int64(v))
 
 		case "uint8":
 			v := mem[offset]
-			s.Set(lf.Name, float64(v))
+			s.Set(lf.Name, int64(v))
 
 		case "int16":
 			v := int16(binary.LittleEndian.Uint16(mem[offset:]))
-			s.Set(lf.Name, float64(v))
+			s.Set(lf.Name, int64(v))
 
 		case "uint16":
 			v := binary.LittleEndian.Uint16(mem[offset:])
-			s.Set(lf.Name, float64(v))
+			s.Set(lf.Name, int64(v))
 
 		case "int32":
 			v := int32(binary.LittleEndian.Uint32(mem[offset:]))
-			s.Set(lf.Name, float64(v))
+			s.Set(lf.Name, int64(v))
 
 		case "uint32":
 			v := binary.LittleEndian.Uint32(mem[offset:])
-			s.Set(lf.Name, float64(v))
+			s.Set(lf.Name, int64(v))
 
 		case "int64":
 			v := int64(binary.LittleEndian.Uint64(mem[offset:]))
-			s.Set(lf.Name, float64(v))
+			s.Set(lf.Name, v)
 
 		case "uint64", "uintptr", "ptr":
 			v := binary.LittleEndian.Uint64(mem[offset:])
-			s.Set(lf.Name, float64(v))
+			s.Set(lf.Name, int64(v))
 
 		case "float":
 			bits := binary.LittleEndian.Uint64(mem[offset:])
@@ -693,16 +621,10 @@ func (s *StructObject) Layout() []FieldLayout {
 				align, typ = 8, "instance"
 			case PTR:
 				size, align, typ = 8, 8, "ptr"
+			case int64:
+				size, align, typ = 8, 8, "int64"
 			case float64:
-				if v == math.Trunc(v) && v >= math.MinInt64 && v <= math.MaxUint64 {
-					if v >= 0 && v <= math.MaxUint64 {
-						size, align, typ = 8, 8, "uint64"
-					} else {
-						size, align, typ = 8, 8, "int64"
-					}
-				} else {
-					size, align, typ = 8, 8, "float"
-				}
+				size, align, typ = 8, 8, "float"
 			default:
 				throwNoPos("Unsupported field type: %s", field.Identifier)
 			}
@@ -842,7 +764,11 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 	case *NilNode:
 		return nil
 	case *NumNode:
-		return node.Value
+		if !node.Int {
+			return node.Value
+		} else {
+			return int64(node.Value)
+		}
 	case *StrNode:
 		return node.Value
 	case *BoolNode:

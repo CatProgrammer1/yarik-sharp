@@ -124,6 +124,7 @@ func (funcCall *FuncCall) Line() int {
 
 type NumNode struct {
 	Value float64
+	Int   bool
 	X, Y  int
 }
 

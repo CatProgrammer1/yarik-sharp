@@ -143,6 +143,7 @@ func newDataTypeNode(token Token) Node {
 	case "number":
 		return &NumNode{
 			token.Value.(float64),
+			floatIsInt(token.Value.(float64)),
 			x, y,
 		}
 	case "string":
@@ -753,7 +754,7 @@ MAPPAR:
 			if len(currentValue) > 1 || len(currentValue) == 0 {
 				throw("Element has more than one value or empty.", token.Position, token.Line)
 			}
-			
+
 			mapNode.Map = append(mapNode.Map, &Element{
 				Key:   currentKey,
 				Value: currentValue,
