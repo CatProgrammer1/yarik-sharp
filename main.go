@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 
 	"github.com/elliotchance/orderedmap/v3"
@@ -72,17 +71,23 @@ func ptrToFloat(p uintptr) float64 {
 }
 
 func numberToFloat64(n any) (float64, bool) {
-	v := reflect.ValueOf(n)
-	switch v.Kind() {
-	case reflect.Float32, reflect.Float64:
-		return v.Convert(reflect.TypeOf(float64(0))).Float(), true
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(v.Int()), true
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return float64(v.Uint()), true
-	default:
-		return -1, false
+	switch n := n.(type) {
+	case float64:
+		return n, true
+	case int64:
+		return float64(n), true
 	}
+	return 0, false
+}
+
+func numberToInt(n any) (int64, bool) {
+	switch n := n.(type) {
+	case float64:
+		return int64(n), true
+	case int64:
+		return n, true
+	}
+	return 0, false
 }
 
 func mustNTOF64(n any) float64 {
@@ -128,20 +133,9 @@ func checkDataType(expected string, v any) bool {
 
 		return ok
 	case "ptr":
-		oks := []bool{}
+		_, ok := v.(unsafe.Pointer)
 
-		_, ok := v.(PTR)
-		oks = append(oks, ok)
-
-		_, ok = v.(unsafe.Pointer)
-		oks = append(oks, ok)
-
-		for _, ok := range oks {
-			if ok {
-				return ok
-			}
-		}
-		return false
+		return ok
 	case "number":
 		oks := []bool{}
 
@@ -152,9 +146,6 @@ func checkDataType(expected string, v any) bool {
 		oks = append(oks, ok)
 
 		_, ok = v.(uintptr)
-		oks = append(oks, ok)
-
-		_, ok = v.(PTR)
 		oks = append(oks, ok)
 
 		for _, ok := range oks {

@@ -12,9 +12,9 @@ const (
 
 var (
 	tokenTypesExpects = map[string][]string{
-		"number,ident,string,bool,nil,openbracket,opensqbrac,newstruct": {"openbracket", "opensqbrac", "add", "bitor", "sub", "div", "mul", "pow",
+		"int,float,ident,string,bool,nil,openbracket,opensqbrac,newstruct": {"openbracket", "opensqbrac", "add", "bitor", "sub", "div", "mul", "pow",
 			"equals", "notequals", "greater", "less", "greatereq", "lesseq", "and", "or", "indexstruct"},
-		"add,sub,div,mul,pow,equals,notequals,greater,less,greatereq,lesseq,bitor,and,or,return,getptr": {"number", "ident", "string", "bool", "openbracket", "nil"},
+		"add,sub,div,mul,pow,equals,notequals,greater,less,greatereq,lesseq,bitor,and,or,return,getptr": {"int", "float", "ident", "string", "bool", "openbracket", "nil"},
 		"opensqbrac,getptr": {"opensqbrac"},
 	}
 	binOpsList = []string{
@@ -140,10 +140,14 @@ func newDataTypeNode(token Token) Node {
 	x, y := token.Position, token.Line
 
 	switch token.Type {
-	case "number":
-		return &NumNode{
+	case "int":
+		return &IntNode{
+			token.Value.(int64),
+			x, y,
+		}
+	case "float":
+		return &FloatNode{
 			token.Value.(float64),
-			floatIsInt(token.Value.(float64)),
 			x, y,
 		}
 	case "string":
@@ -521,7 +525,7 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 
 			return nodes
 		}
-	case "number", "string", "bool", "nil":
+	case "int", "float", "string", "bool", "nil":
 		nodes = appendDataType(newDataTypeNode(currentToken), nodes)
 		parser.Next()
 
@@ -731,7 +735,7 @@ func (parser *Parser) ParseMap() *MapNode {
 
 	var currentKey, currentValue []Node
 
-	elementCount := float64(0)
+	elementCount := int64(0)
 
 MAPPAR:
 	for parser.CurrentPosition >= 0 {
@@ -779,7 +783,7 @@ MAPPAR:
 				currentValue = currentKey
 				currentKey = []Node{newDataTypeNode(Token{
 					Value: elementCount,
-					Type:  "number",
+					Type:  "int",
 				})}
 			}
 		}
@@ -902,7 +906,7 @@ STRUCTDECLPAR:
 func (parser *Parser) ParseStructDeclFields() []*FieldDeclNode {
 	fields := []*FieldDeclNode{}
 
-	var cbits *NumNode
+	var cbits *IntNode
 
 FIELDS:
 	for parser.CurrentPosition >= 0 {
@@ -910,10 +914,10 @@ FIELDS:
 
 		switch token.Type {
 		case "valbitcount":
-			parser.Next("number")
+			parser.Next("int")
 			token = parser.CurrentToken
 
-			cbits = newDataTypeNode(token).(*NumNode)
+			cbits = newDataTypeNode(token).(*IntNode)
 			parser.Next("ident")
 		case "ident":
 			fieldDeclNode := &FieldDeclNode{

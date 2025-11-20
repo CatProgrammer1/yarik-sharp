@@ -122,7 +122,7 @@ func (funcCall *FuncCall) Line() int {
 	return funcCall.Y
 }
 
-type NumNode struct {
+/*type NumNode struct {
 	Value float64
 	Int   bool
 	X, Y  int
@@ -133,6 +133,30 @@ func (numNode *NumNode) Position() int {
 }
 func (numNode *NumNode) Line() int {
 	return numNode.Y
+}*/
+
+type IntNode struct {
+	Value int64
+	X, Y  int
+}
+
+func (intNode *IntNode) Position() int {
+	return intNode.X
+}
+func (intNode *IntNode) Line() int {
+	return intNode.Y
+}
+
+type FloatNode struct {
+	Value float64
+	X, Y  int
+}
+
+func (floatNode *FloatNode) Position() int {
+	return floatNode.X
+}
+func (floatNode *FloatNode) Line() int {
+	return floatNode.Y
 }
 
 type StrNode struct {
@@ -324,7 +348,7 @@ func (importNode *Import) Line() int {
 
 type FieldDeclNode struct {
 	Identifier IdentNode
-	Bits       *NumNode
+	Bits       *IntNode
 	Func       *FuncDec
 }
 

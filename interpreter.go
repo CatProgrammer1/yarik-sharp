@@ -27,7 +27,7 @@ type Scope struct {
 
 type Cell struct {
 	Value any
-	Ptr   unsafe.Pointer
+	Ptr   uintptr
 }
 
 func CLPTR(v any) *Cell {
@@ -41,7 +41,7 @@ func CLPTR(v any) *Cell {
 			cell = &Cell{Value: f}
 		}
 	}
-	cell.Ptr = unsafe.Pointer(&cell.Value)
+	cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
 
 	return cell
 }
@@ -51,8 +51,6 @@ func CL(v any) Cell {
 
 	return cell
 }
-
-type PTR float64
 
 func checkType[T any](v any) bool {
 	_, ok := v.(T)
@@ -67,7 +65,7 @@ var (
 		"",
 	}
 
-	typeName      = regexp.MustCompile(`<\*(?:[^.]+\.)?([^ ]+)`)
+	typeName = regexp.MustCompile(`<\*(?:[^.]+\.)?([^ ]+)`)
 )
 
 func format(v ...any) string {
@@ -107,7 +105,7 @@ func format(v ...any) string {
 			}
 
 			formated += fmt.Sprintf(structFormat, a.Identifier, fields) + suffix
-		case PTR, unsafe.Pointer:
+		case uintptr:
 			formated += fmt.Sprintf("%#x", a) + suffix
 		case nil:
 			for k, t := range tokenTypes {
@@ -160,7 +158,7 @@ func importModule(path string, mainScope *Scope) {
 
 		for k, v := range moduleData {
 			cell := &Cell{Value: v.Value}
-			cell.Ptr = unsafe.Pointer(&cell.Value)
+			cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
 
 			mainScope.Data[k] = cell
 			mainScope.Pointers[uintptr(cell.Ptr)] = cell
@@ -169,21 +167,6 @@ func importModule(path string, mainScope *Scope) {
 	}
 	throwNoPos("Invalid file or library '%s'", path)
 }
-
-/*func sliceToMap[T any](slice []T) *orderedmap.OrderedMap[Cell, *Cell] {
-	m := orderedmap.NewOrderedMap[any, any]()
-
-	for i, v := range slice {
-		float, ok := numberToFloat64(v)
-		if ok {
-			m.Set(float64(i), float)
-		} else {
-			m.Set(float64(i), v)
-		}
-	}
-
-	return m
-}*/
 
 func mapToSlice[T any](m *orderedmap.OrderedMap[Cell, *Cell]) []T {
 	slice := make([]T, m.Len())
@@ -256,15 +239,15 @@ func (scope *Scope) Add(key, value any) (success bool) {
 
 	switch value := value.(type) {
 	case *StructObject:
-		cell.Ptr = unsafe.Pointer(value.Address())
+		cell.Ptr = uintptr(value.Address())
 	case *orderedmap.OrderedMap[Cell, *Cell]:
 		sliceKind := mapToSliceAny(value)
 
 		ptr, _ := valueToPtr(sliceKind, 0, 0)
 
-		cell.Ptr = unsafe.Pointer(ptr)
+		cell.Ptr = uintptr(unsafe.Pointer(ptr))
 	default:
-		cell.Ptr = unsafe.Pointer(&cell.Value)
+		cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
 	}
 
 	scope.Data[key] = cell
@@ -284,7 +267,7 @@ func (scope *Scope) Set(key, value any, x, y int) (success bool) {
 
 		cell := scope.Data[key]
 		cell.Value = value
-		cell.Ptr = unsafe.Pointer(&cell.Value)
+		cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
 
 		return true
 	} else if scope.Parent != nil {
@@ -305,10 +288,12 @@ func (scope *Scope) Get(key any) any {
 
 func (scope *Scope) GetWithAddress(ptr uintptr) any {
 	v, ok := scope.Pointers[ptr]
+	fmt.Println(scope.Pointers, scope.MainScope)
 	if ok {
+		fmt.Printf("%T\n", reflect.TypeOf(v.Value))
 		return v.Value
 	} else if scope.Parent != nil {
-		return scope.GetWithAddress(ptr)
+		return scope.Parent.GetWithAddress(ptr)
 	}
 	return nil
 }
@@ -318,7 +303,7 @@ func (scope *Scope) GetCell(key any) *Cell {
 	if ok {
 		return v
 	} else if scope.Parent != nil {
-		return scope.GetCell(key)
+		return scope.Parent.GetCell(key)
 	}
 	return nil
 }
@@ -478,7 +463,7 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout) {
 
 		case "uint64", "uintptr", "ptr":
 			v := binary.LittleEndian.Uint64(mem[offset:])
-			s.Set(lf.Name, int64(v))
+			s.Set(lf.Name, uintptr(v))
 
 		case "float":
 			bits := binary.LittleEndian.Uint64(mem[offset:])
@@ -517,19 +502,6 @@ func (s *StructObject) Address() uintptr {
 	return uintptr(unsafe.Pointer(&s.LastMem[0]))
 }
 
-/*func toFloat64(v any) float64 {
-	switch val := v.(type) {
-	case float64:
-		return val
-	case int, int32, int64:
-		return float64(toInt64(val))
-	case uint, uint32, uint64:
-		return float64(toUint64(val))
-	default:
-		return 0
-	}
-}*/
-
 func toInt64(v any) int64 {
 	switch val := v.(type) {
 	case int:
@@ -542,8 +514,8 @@ func toInt64(v any) int64 {
 		return int64(val)
 	case uint64:
 		return int64(val)
-	case PTR:
-		return int64(math.Float64bits(float64(val)))
+	case unsafe.Pointer:
+		return int64(uintptr(val))
 	case float64:
 		return int64(val)
 	case uintptr:
@@ -569,8 +541,8 @@ func toUint64(v any) uint64 {
 		return uint64(val)
 	case uint64:
 		return val
-	case PTR:
-		return math.Float64bits(float64(val))
+	case unsafe.Pointer:
+		return uint64(uintptr(val))
 	case float64:
 		return uint64(val)
 	case uintptr:
@@ -601,7 +573,7 @@ func (s *StructObject) Layout() []FieldLayout {
 			if field.LayoutType > 0 {
 				prefix = "u"
 			}
-			switch int(math.Abs(float64(field.LayoutType))) {
+			switch int64(math.Abs(float64(field.LayoutType))) {
 			case 16:
 				size, align, typ = 2, 2, prefix+"int16"
 			case 32:
@@ -619,7 +591,7 @@ func (s *StructObject) Layout() []FieldLayout {
 				size = last.Offset + last.Size
 
 				align, typ = 8, "instance"
-			case PTR:
+			case unsafe.Pointer, uintptr:
 				size, align, typ = 8, 8, "ptr"
 			case int64:
 				size, align, typ = 8, 8, "int64"
@@ -681,7 +653,7 @@ func (structObj *StructObject) Set(fieldName string, value any) bool {
 		}
 		if field.Identifier == fieldName {
 			cell.Value = value
-			cell.Ptr = unsafe.Pointer(&cell.Value)
+			cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
 
 			return true
 		}
@@ -763,12 +735,10 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 	switch node := node.(type) {
 	case *NilNode:
 		return nil
-	case *NumNode:
-		if !node.Int {
-			return node.Value
-		} else {
-			return int64(node.Value)
-		}
+	case *IntNode:
+		return node.Value
+	case *FloatNode:
+		return node.Value
 	case *StrNode:
 		return node.Value
 	case *BoolNode:
@@ -801,14 +771,14 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 		case *IdentNode:
 			identifier := srcNode.Value
 
-			cell, ok := scope.Data[identifier]
-			if !ok {
+			cell := scope.GetCell(identifier)
+			if cell == nil {
 				throw("Attempt to get a pointer of non-existing value.", node.X, node.Y)
 			}
 
 			/*switch cellVal := cell.Value.(type) {
 			default:*/
-			return cell.Ptr
+			return uintptr(cell.Ptr)
 			//}
 		case *GetElementNode:
 			tableNode, keyNodes := inter.GetTableAndKeys(srcNode, []Node{})
@@ -827,7 +797,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 			case *orderedmap.OrderedMap[Cell, *Cell], string:
 				cell := inter.GetTableCellByKeys(table, keys, srcNode, 0)
 
-				return cell.Ptr
+				return uintptr(cell.Ptr)
 			default:
 				throw("Cannot index non-table value.", node.X, node.Y)
 			}
@@ -1013,7 +983,6 @@ func (inter *Interpreter) GetMap(node *MapNode) *orderedmap.OrderedMap[Cell, *Ce
 
 	for _, element := range node.Map {
 		key, value := inter.GetNodeValueS(element.Key, element.X, element.Y), inter.GetNodeValueS(element.Value, element.X, element.Y)
-		fmt.Printf("VAL %v %T\n", value, value)
 
 		m.Set(CL(key), CLPTR(value))
 	}
@@ -1266,7 +1235,7 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		cell := &Cell{
 			Value: fieldDecl.Func,
 		}
-		cell.Ptr = unsafe.Pointer(&cell.Value)
+		cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
 
 		fields = append(fields, &Field{
 			Identifier: fieldDecl.Identifier,
@@ -1283,10 +1252,22 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 			throw("Attempt to assign a value for a method of structure '%s'.", structObjNode.X, structObjNode.Y, identifier)
 		}
 
+		v := inter.GetNodeValueS(fieldNode.Value, fieldNode.Identifier.X, fieldNode.Identifier.Y)
+
 		cell := &Cell{
-			Value: inter.GetNodeValueS(fieldNode.Value, fieldNode.Identifier.X, fieldNode.Identifier.Y),
+			Value: v,
 		}
-		cell.Ptr = unsafe.Pointer(&cell.Value)
+		switch v := v.(type) {
+		case []any:
+			if len(v) > 1 {
+				throw("Field cannot have more than one value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
+			} else if len(v) == 0 {
+				throw("Cannot assign a field cannot be an empty value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
+			}
+
+			cell.Value = v[0]
+		}
+		cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
 
 		bits := originalStructure.Fields[i].Bits
 

@@ -7,7 +7,6 @@ import (
 	"math"
 	"runtime"
 	"strconv"
-	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -54,6 +53,8 @@ var (
 			switch t := v[0].(type) {
 			case float64:
 				time.Sleep(time.Duration(t * float64(time.Second)))
+			case int64:
+				time.Sleep(time.Duration(t * int64(time.Millisecond)))
 			default:
 				throw("Time value must be a number.", x, y)
 			}
@@ -73,28 +74,26 @@ var (
 		},
 
 		"len": func(v ...any) []any {
+			argsCheck(v, 1, 1, "any")
 			x, y := v[0].(int), v[1].(int)
 
 			v = v[BUILTIN_SPECIALS:]
-			if len(v) <= 0 && len(v) > 1 {
-				throw("Function requires only one argument.", x, y)
-			}
 
 			a := v[0]
 			switch a := a.(type) {
 			case *orderedmap.OrderedMap[any, any]:
-				return []any{float64(a.Len())}
+				return []any{int64(a.Len())}
 			case string:
-				return []any{float64(len(a))}
+				return []any{int64(len(a))}
 			case *StructObject:
 				layout := a.Layout()
 				if len(layout) == 0 {
-					return []any{float64(0)}
+					return []any{int64(0)}
 				}
 
 				lastFieldLayout := layout[len(layout)-1]
 
-				return []any{float64(lastFieldLayout.Offset + lastFieldLayout.Size)}
+				return []any{int64(lastFieldLayout.Offset + lastFieldLayout.Size)}
 			default:
 				throw("Cannot get lenght of non-string, non-table or non-instance value.", x, y)
 			}
@@ -111,27 +110,34 @@ var (
 			return []any{getValueType(v[0])}
 		},
 		"tonum": func(v ...any) []any {
+			argsCheck(v, 2, 2, "string", "bool")
 			x, y := v[0].(int), v[1].(int)
 
 			v = v[BUILTIN_SPECIALS:]
-			if len(v) <= 0 && len(v) > 1 {
-				throw("Function requires only one argument.", x, y)
-			}
 
-			str, ok := v[0].(string)
-			if !ok {
-				throw("Argument must be a string value.", x, y)
-			}
+			str := v[0].(string)
+			isint := v[1].(bool)
 
-			n, err := strconv.ParseFloat(str, 64)
-			switch err {
-			case strconv.ErrSyntax:
-				throw("Syntax error while trying to parse number value.", x, y)
-			case strconv.ErrRange:
-				throw("Number value is out of range.", x, y)
-			}
+			if !isint {
+				n, err := strconv.ParseFloat(str, 64)
+				switch err {
+				case strconv.ErrSyntax:
+					throw("Syntax error while trying to parse number value.", x, y)
+				case strconv.ErrRange:
+					throw("Number value is out of range.", x, y)
+				}
+				return []any{n}
+			} else {
+				n, err := strconv.ParseInt(str, 0, 64)
+				switch err {
+				case strconv.ErrSyntax:
+					throw("Syntax error while trying to parse number value.", x, y)
+				case strconv.ErrRange:
+					throw("Number value is out of range.", x, y)
+				}
 
-			return []any{n}
+				return []any{n}
+			}
 		},
 
 		"bytestostr": func(v ...any) []any {
@@ -145,11 +151,11 @@ var (
 		},
 
 		"unicodetostr": func(v ...any) []any {
-			argsCheck(v, 1, 1, "number")
+			argsCheck(v, 1, 1, "int")
 
 			v = v[BUILTIN_SPECIALS:]
 
-			r := rune(v[0].(float64))
+			r := rune(v[0].(int64))
 
 			return []any{string(r)}
 		},
@@ -185,7 +191,7 @@ var (
 
 			procerr := proc.Find()
 			if procerr != nil {
-				return []any{PTR(0), PTR(0), procerr}
+				return []any{uintptr(0), uintptr(0), procerr}
 			}
 
 			r1, r2, err := proc.Call(params...)
@@ -205,7 +211,7 @@ var (
 				}
 			}
 
-			return []any{PTR(ptrToFloat(r1)), PTR(ptrToFloat(r2)), err}
+			return []any{r1, r2, err}
 		},
 
 		"call": func(v ...any) []any {
@@ -219,8 +225,6 @@ var (
 			dllName := v[0].(string)
 			procName := v[1].(string)
 			paramsMap := v[2].(*orderedmap.OrderedMap[Cell, *Cell])
-
-			fmt.Println("LEN", paramsMap.Len())
 
 			params := make([]uintptr, paramsMap.Len())
 			buffers := make([]any, paramsMap.Len()) // ← Храним буферы здесь
@@ -244,7 +248,7 @@ var (
 
 			procerr := proc.Find()
 			if procerr != nil {
-				return []any{PTR(0), PTR(0), procerr}
+				return []any{uintptr(0), uintptr(0), procerr}
 			}
 
 			r1, r2, err := proc.Call(params...)
@@ -264,43 +268,15 @@ var (
 				}
 			}
 
-			return []any{PTR(ptrToFloat(r1)), PTR(ptrToFloat(r2)), err}
+			return []any{r1, r2, err}
 		},
 
-		"ptrconv": func(v ...any) []any {
-			argsCheck(v, 2, 2, "number", "string")
-
-			x, y := v[0].(int), v[1].(int)
+		"ptr": func(v ...any) []any {
+			argsCheck(v, 1, 1, "int")
 
 			v = v[BUILTIN_SPECIALS:]
 
-			ptrUintptr := floatToPtr(v[0].(float64))
-			if ptrUintptr == 0 {
-				throw("Void address.", x, y)
-			}
-			if ptrUintptr%unsafe.Alignof(int(0)) != 0 {
-				throw("Unaligned address.", x, y)
-			}
-
-			ptr := unsafe.Pointer(ptrUintptr)
-			dataType := strings.ToLower(v[1].(string))
-
-			switch dataType {
-			case "number":
-				throw("Use int, float etc. instead of number.", x, y)
-			case "int":
-				return []any{float64(*(*int)(ptr))}
-			case "float":
-				return []any{*(*float64)(ptr)}
-			/*case "table":
-				throw("Use array instead of table.", x, y)
-			case "array":
-			return []any{sliceToMap(unsafe.Slice((*byte)(ptr), arrayLenght))}*/
-			default:
-				throw("Invalid type to convert into.", x, y)
-			}
-
-			return []any{nil}
+			return []any{uintptr(v[0].(int64))}
 		},
 	}
 )
@@ -308,13 +284,9 @@ var (
 func valueToPtr(v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
 	case float64:
-		if math.Trunc(val) == val {
-			return uintptr(uint32(val)), nil
-		} else {
-			return floatToPtr(val), nil
-		}
-	case PTR:
-		return floatToPtr(float64(val)), nil
+		return uintptr(math.Float64bits(val)), val
+	case uintptr:
+		return val, nil
 	case unsafe.Pointer:
 		return uintptr(val), val
 	case *StructObject:
