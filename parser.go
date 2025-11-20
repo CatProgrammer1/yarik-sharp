@@ -62,17 +62,17 @@ func (parser *Parser) Next(expectedTokenTypes ...string) {
 
 	currentToken := parser.Tokens[parser.CurrentPosition]
 	if len(parser.Expected) > 0 && !slices.Contains(parser.Expected, currentToken.Type) {
-		throw("Expected '%s' got '%s'.", currentToken.Position, currentToken.Line, parser.Expected, currentToken.Type)
+		throw(EXCEPTION_ERROR, currentToken.Position, currentToken.Line, parser.Expected, currentToken.Type)
 	}
 	if len(parser.Unexpected) > 0 && slices.Contains(parser.Unexpected, currentToken.Type) {
-		throw("Invalid token '%s'.", currentToken.Position, currentToken.Line, parser.Expected, currentToken.Type)
+		throw(INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, parser.Expected, currentToken.Type)
 	}
 
 	parser.Unexpected = []string{}
 	parser.CurrentToken = currentToken
 
 	if parser.LastToken == parser.CurrentToken {
-		throw("Invalid token '%s'.", currentToken.Position, currentToken.Line, parser.Expected, currentToken.Type)
+		throw(INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, parser.Expected, currentToken.Type)
 	}
 	parser.LastToken = parser.CurrentToken
 }
@@ -527,7 +527,7 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 		return nodes
 	}
 
-	throw("Invalid token '%s'.", currentToken.Position, currentToken.Line, currentToken.Type)
+	throw(INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, currentToken.Type)
 	return nil
 }
 
@@ -669,7 +669,7 @@ FOREACHPAR:
 			}
 			fallthrough
 		default:
-			throw("Invalid token '%s'.", token.Position, token.Line, token.Type)
+			throw(INVALID_TOKEN_ERROR, token.Position, token.Line, token.Type)
 		}
 	}
 
@@ -750,10 +750,10 @@ MAPPAR:
 			if len(currentKey) > 1 || len(currentKey) == 0 {
 				throw("Key has more than one value or empty.", token.Position, token.Line)
 			}
-
 			if len(currentValue) > 1 || len(currentValue) == 0 {
 				throw("Element has more than one value or empty.", token.Position, token.Line)
 			}
+			
 			mapNode.Map = append(mapNode.Map, &Element{
 				Key:   currentKey,
 				Value: currentValue,

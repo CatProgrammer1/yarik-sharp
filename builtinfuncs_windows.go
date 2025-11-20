@@ -163,7 +163,7 @@ var (
 			v = v[BUILTIN_SPECIALS:]
 
 			procName := v[0].(string)
-			paramsMap := v[1].(*orderedmap.OrderedMap[any, any])
+			paramsMap := v[1].(*orderedmap.OrderedMap[Cell, *Cell])
 
 			params := make([]uintptr, paramsMap.Len())
 			buffers := make([]any, paramsMap.Len()) // ← Храним буферы здесь
@@ -171,7 +171,7 @@ var (
 
 			// Подготавливаем параметры и сохраняем буферы
 			for _, v := range paramsMap.AllFromFront() {
-				ptr, buf := valueToPtr(v, x, y)
+				ptr, buf := valueToPtr(v.Value, x, y)
 				if buf != nil {
 					buffers[i] = buf
 				}
@@ -181,6 +181,65 @@ var (
 			}
 
 			ntdll := syscall.NewLazyDLL("ntdll.dll")
+			proc := ntdll.NewProc(procName)
+
+			procerr := proc.Find()
+			if procerr != nil {
+				return []any{PTR(0), PTR(0), procerr}
+			}
+
+			r1, r2, err := proc.Call(params...)
+
+			// Обновляем структуры из памяти
+			for _, ptr := range params {
+				value := inter.CurrentScope.GetWithAddress(ptr)
+				if value == nil {
+					continue
+				}
+
+				switch instance := value.(type) {
+				case *StructObject:
+					layout := instance.Layout()
+
+					instance.FromMemoryLayout(layout)
+				}
+			}
+
+			return []any{PTR(ptrToFloat(r1)), PTR(ptrToFloat(r2)), err}
+		},
+
+		"call": func(v ...any) []any {
+			argsCheck(v, 3, 3, "string", "string", "table")
+
+			x, y := v[0].(int), v[1].(int)
+			inter := v[2].(*Interpreter)
+
+			v = v[BUILTIN_SPECIALS:]
+
+			dllName := v[0].(string)
+			procName := v[1].(string)
+			paramsMap := v[2].(*orderedmap.OrderedMap[Cell, *Cell])
+
+			fmt.Println("LEN", paramsMap.Len())
+
+			params := make([]uintptr, paramsMap.Len())
+			buffers := make([]any, paramsMap.Len()) // ← Храним буферы здесь
+			i := 0
+
+			// Подготавливаем параметры и сохраняем буферы
+			for _, v := range paramsMap.AllFromFront() {
+				ptr, buf := valueToPtr(v.Value, x, y)
+				if buf != nil {
+					buffers[i] = buf
+				}
+
+				params[i] = ptr
+				i++
+			}
+
+			fmt.Println(params)
+
+			ntdll := syscall.NewLazyDLL(dllName)
 			proc := ntdll.NewProc(procName)
 
 			procerr := proc.Find()
@@ -257,12 +316,9 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 	case PTR:
 		return floatToPtr(float64(val)), nil
 	case unsafe.Pointer:
-		return uintptr(val), nil
+		return uintptr(val), val
 	case *StructObject:
-		layout := val.Layout()
-		val.ToMemoryLayout(layout)
-
-		return uintptr(unsafe.Pointer(&val.LastMem[0])), val.LastMem
+		return val.Address(), val.LastMem
 	case []any:
 		return uintptr(unsafe.Pointer(&val[0])), val
 	case string:

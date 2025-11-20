@@ -153,7 +153,7 @@ func checkDataType(expected string, v any) bool {
 
 		return ok
 	case "table":
-		_, ok := v.(*orderedmap.OrderedMap[any, any])
+		_, ok := v.(*orderedmap.OrderedMap[Cell, *Cell])
 
 		return ok
 	case "instancestrict":
@@ -261,38 +261,6 @@ func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 
 // ? go build -o bin/yks.exe yks
 func main() { //*go run yks runinfo test.yks
-	/*dll := syscall.NewLazyDLL("test_struct.dll")
-	proc := dll.NewProc("check_OBJECT_ATTRIBUTES")
-
-	utf16S, _ := syscall.UTF16FromString("Sigma")
-
-	unicode_string := newInstance("UNICODE_STRING",
-		[]*Field{
-			{"Length", false, -16, float64(len(utf16S) * 2)},
-			{"MaximumLength", false, 16, float64(cap(utf16S) * 2)},
-			{"Buffer", false, 0, PTR(ptrToFloat(uintptr(unsafe.Pointer(&utf16S[0]))))},
-		})
-
-	fmt.Println(float64(int32(-1)))
-
-	obj := newInstance("OBJECT_ATTRIBUTES",
-		[]*Field{
-			{"Length", false, 64, float64(48)},
-			{"RootDirectory", false, 0, float64(0)},
-			{"ObjectName", false, 0, unicode_string},
-			{"Attributes", false, 64, float64(64)},
-			{"SecurityDescriptor", false, 0, float64(0)},
-			{"SecurityQoS", false, 0, float64(0)},
-		})
-
-	fmt.Println(obj.Fields[0].Value)
-
-	layout := obj.Layout()
-
-	proc.Call(uintptr(unsafe.Pointer(&obj.ToMemoryLayout(layout)[0])))
-
-	obj.FromMemoryLayout(layout)
-	fmt.Println(obj.Fields[0].Value)*/
 
 	commands["build"] = func(args []string) {
 		//Lox

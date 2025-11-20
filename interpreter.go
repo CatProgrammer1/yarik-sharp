@@ -329,6 +329,12 @@ func (scope *Scope) Add(key, value any) (success bool) {
 	switch value := value.(type) {
 	case *StructObject:
 		cell.Ptr = unsafe.Pointer(value.Address())
+	case *orderedmap.OrderedMap[Cell, *Cell]:
+		sliceKind := mapToSliceAny(value)
+
+		ptr, _ := valueToPtr(sliceKind, 0, 0)
+
+		cell.Ptr = unsafe.Pointer(ptr)
 	default:
 		cell.Ptr = unsafe.Pointer(&cell.Value)
 	}
@@ -874,22 +880,31 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 				throw("Attempt to get a pointer of non-existing value.", node.X, node.Y)
 			}
 
-			switch cellVal := cell.Value.(type) {
-			case *StructObject:
-				ptr, _ := valueToPtr(cell.Value, node.X, node.Y)
-
-				return unsafe.Pointer(ptr)
-			case *orderedmap.OrderedMap[Cell, *Cell]:
-				sliceKind := mapToSliceAny(cellVal)
-
-				ptr, _ := valueToPtr(sliceKind, node.X, node.Y)
-
-				return unsafe.Pointer(ptr)
-			default:
-				return cell.Ptr
+			/*switch cellVal := cell.Value.(type) {
+			default:*/
+			return cell.Ptr
+			//}
+		case *GetElementNode:
+			tableNode, keyNodes := inter.GetTableAndKeys(srcNode, []Node{})
+			if tableNode == nil {
+				throw("Attempt to index nothing.", srcNode.X, srcNode.Y)
 			}
-		default:
 
+			table := inter.GetNodeValue(tableNode)
+
+			keys := []any{}
+			for _, keyNode := range keyNodes {
+				keys = append(keys, inter.GetNodeValue(keyNode))
+			}
+
+			switch table := table.(type) {
+			case *orderedmap.OrderedMap[Cell, *Cell], string:
+				cell := inter.GetTableCellByKeys(table, keys, srcNode, 0)
+
+				return cell.Ptr
+			default:
+				throw("Cannot index non-table value.", node.X, node.Y)
+			}
 		}
 	case *GetFieldNode:
 		structObjNode, fieldNodes := inter.GetStructAndFieldNames(node, []Node{})
@@ -976,7 +991,7 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 
 	switch table := table.(type) {
 	case *orderedmap.OrderedMap[Cell, *Cell]:
-		elem := table.GetElement(Cell{Value: key}).Value
+		elem := table.GetElement(CL(key)).Value
 		var val any
 		if elem != nil {
 			val = elem.Value
@@ -1001,6 +1016,30 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 
 			return char
 		}
+	}
+	throw("Attempt to index non-table value.", getElemN.X, getElemN.Y)
+	return nil
+}
+
+func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *GetElementNode, index int) *Cell {
+	if index >= len(keys) {
+		return nil
+	}
+
+	key := keys[index]
+
+	switch table := table.(type) {
+	case *orderedmap.OrderedMap[Cell, *Cell]:
+		elem := table.GetElement(CL(key)).Value
+		var val *Cell
+		if elem != nil {
+			val = elem
+		}
+
+		if index+1 < len(keys) {
+			return inter.GetTableCellByKeys(val.Value, keys, getElemN, index+1)
+		}
+		return val
 	}
 	throw("Attempt to index non-table value.", getElemN.X, getElemN.Y)
 	return nil
@@ -1048,6 +1087,7 @@ func (inter *Interpreter) GetMap(node *MapNode) *orderedmap.OrderedMap[Cell, *Ce
 
 	for _, element := range node.Map {
 		key, value := inter.GetNodeValueS(element.Key, element.X, element.Y), inter.GetNodeValueS(element.Value, element.X, element.Y)
+		fmt.Printf("VAL %v %T\n", value, value)
 
 		m.Set(CL(key), CLPTR(value))
 	}
