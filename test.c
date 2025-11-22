@@ -3,5 +3,5 @@
 //gcc -shared -o test_struct.dll test.c
 
 __declspec(dllexport) void Sigma(long* a) {
-    *a = 1000;
+    *a = 1488;
 }

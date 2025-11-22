@@ -274,6 +274,7 @@ func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 //!nasm -f bin s.asm -o test.bin
 
 // ? go build -o bin/yks.exe yks
+// *go run -race yks runinfo test.yks
 func main() { //*go run yks runinfo test.yks
 
 	commands["build"] = func(args []string) {

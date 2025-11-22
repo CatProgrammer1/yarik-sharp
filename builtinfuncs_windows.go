@@ -177,7 +177,7 @@ var (
 
 			// Подготавливаем параметры и сохраняем буферы
 			for _, v := range paramsMap.AllFromFront() {
-				ptr, buf := valueToPtr(v.Value, x, y)
+				ptr, buf := valueToPtr(v.Get(), x, y)
 				if buf != nil {
 					buffers[i] = buf
 				}
@@ -198,7 +198,7 @@ var (
 
 			// Обновляем структуры из памяти
 			for _, ptr := range params {
-				value := inter.CurrentScope.GetWithAddress(ptr)
+				value := inter.CurrentScope.GetWithAddress(unsafe.Pointer(ptr))
 				if value == nil {
 					continue
 				}
@@ -232,7 +232,7 @@ var (
 
 			// Подготавливаем параметры и сохраняем буферы
 			for _, v := range paramsMap.AllFromFront() {
-				ptr, buf := valueToPtr(v.Value, x, y)
+				ptr, buf := valueToPtr(v.Get(), x, y)
 				if buf != nil {
 					buffers[i] = buf
 				}
@@ -255,17 +255,19 @@ var (
 
 			// Обновляем структуры из памяти
 			for _, ptr := range params {
-				value := inter.CurrentScope.GetWithAddress(ptr)
+				value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
 				if value == nil {
 					continue
 				}
 
-				switch instance := value.(type) {
-				case *StructObject:
-					layout := instance.Layout()
-
-					instance.FromMemoryLayout(layout)
+				instance, ok := value.Get().(*StructObject)
+				if !ok {
+					continue
 				}
+
+				layout := instance.Layout()
+
+				instance.FromMemoryLayout(layout)
 			}
 
 			return []any{r1, r2, err}

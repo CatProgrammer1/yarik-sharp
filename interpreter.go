@@ -18,7 +18,7 @@ import (
 
 type Scope struct {
 	Data           map[any]*Cell
-	Pointers       map[uintptr]*Cell
+	Pointers       map[unsafe.Pointer]*Cell
 	Parent         *Scope
 	IsFunc, IsLoop bool
 	ImportedLibs   []string
@@ -26,28 +26,125 @@ type Scope struct {
 }
 
 type Cell struct {
-	Value any
-	Ptr   uintptr
+	IntValue      int64
+	FloatValue    float64
+	BoolValue     bool
+	StringValue   string
+	StructValue   *Structure
+	InstanceValue *StructObject
+	TableValue    *orderedmap.OrderedMap[Cell, *Cell]
+	FuncValue     *FuncDec
+	PtrValue      uintptr
+	ErrorValue    error
+
+	DataType string // int, float, string, bool, struct, instance, table, ptr, func, error
+	Ptr      unsafe.Pointer
+	Pinner   *runtime.Pinner
+}
+
+func (cell *Cell) Set(value any) {
+	if cell.Pinner == nil {
+		cell.Pinner = new(runtime.Pinner)
+	} else {
+		cell.Pinner.Unpin()
+	}
+
+	switch value := value.(type) {
+	case int64:
+		cell.IntValue = value
+		cell.DataType = "int"
+		cell.Ptr = unsafe.Pointer(&cell.IntValue)
+	case float64:
+		cell.FloatValue = value
+		cell.DataType = "float"
+		cell.Ptr = unsafe.Pointer(&cell.FloatValue)
+	case bool:
+		cell.BoolValue = value
+		cell.DataType = "bool"
+		cell.Ptr = unsafe.Pointer(&cell.BoolValue)
+	case string:
+		cell.StringValue = value
+		cell.DataType = "string"
+		cell.Ptr = unsafe.Pointer(&cell.StringValue)
+	case *StructObject:
+		cell.InstanceValue = value
+		cell.DataType = "instance"
+		cell.Ptr = unsafe.Pointer(value.Address())
+	case *Structure:
+		cell.StructValue = value
+		cell.DataType = "struct"
+		cell.Ptr = unsafe.Pointer(value)
+	case *FuncDec:
+		cell.FuncValue = value
+		cell.DataType = "func"
+		cell.Ptr = unsafe.Pointer(value)
+	case *orderedmap.OrderedMap[Cell, *Cell]:
+		cell.TableValue = value
+		cell.DataType = "table"
+		cell.Ptr = unsafe.Pointer(value)
+	case unsafe.Pointer:
+		cell.PtrValue = uintptr(value)
+		cell.DataType = "ptr"
+		cell.Ptr = unsafe.Pointer(&cell.PtrValue)
+	case uintptr:
+		cell.PtrValue = value
+		cell.DataType = "ptr"
+		cell.Ptr = unsafe.Pointer(&cell.PtrValue)
+	case error:
+		cell.ErrorValue = value
+		cell.DataType = "error"
+		cell.Ptr = unsafe.Pointer(&cell.PtrValue)
+	default:
+		fmt.Printf("%T\n", value)
+		panic("Unsupported type in Cell.Set")
+	}
+	cell.Pinner.Pin(cell.Ptr)
+}
+
+func (cell *Cell) Get() any {
+	switch cell.DataType {
+	case "int":
+		return cell.IntValue
+	case "float":
+		return cell.FloatValue
+	case "bool":
+		return cell.BoolValue
+	case "string":
+		return cell.StringValue
+	case "instance":
+		return cell.InstanceValue
+	case "struct":
+		return cell.StructValue
+	case "table":
+		return cell.TableValue
+	case "ptr":
+		return cell.PtrValue
+	case "func":
+		return cell.FuncValue
+	case "error":
+		return cell.ErrorValue
+	default:
+		fmt.Println(cell.DataType)
+		panic("Unsupported type in Cell.Get")
+	}
+}
+
+func (cell *Cell) GetAddress() unsafe.Pointer {
+	return cell.Ptr
 }
 
 func CLPTR(v any) *Cell {
-	var cell *Cell
-	cell = &Cell{Value: v}
-	switch f := v.(type) {
-	case float64:
-		if floatIsInt(f) {
-			cell = &Cell{Value: int64(f)}
-		} else {
-			cell = &Cell{Value: f}
-		}
-	}
-	cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
+	cell := &Cell{}
+
+	cell.Set(v)
 
 	return cell
 }
 
 func CL(v any) Cell {
-	cell := Cell{Value: v}
+	cell := Cell{}
+
+	cell.Set(v)
 
 	return cell
 }
@@ -84,7 +181,7 @@ func format(v ...any) string {
 
 			var elements string
 			for k, v := range a.AllFromFront() {
-				elements += fmt.Sprintf(elemFormat, format(k.Value), format(v.Value))
+				elements += fmt.Sprintf(elemFormat, format(k.Get()), format(v.Get()))
 			}
 
 			formated += fmt.Sprintf(mapFormat, elements) + suffix
@@ -101,7 +198,7 @@ func format(v ...any) string {
 			for _, field := range a.Fields {
 				cell := field.Value
 
-				fields += fmt.Sprintf(fieldFormat, field.Identifier, format(cell.Value))
+				fields += fmt.Sprintf(fieldFormat, field.Identifier, format(cell.Get()))
 			}
 
 			formated += fmt.Sprintf(structFormat, a.Identifier, fields) + suffix
@@ -157,11 +254,11 @@ func importModule(path string, mainScope *Scope) {
 		moduleData := run(finalPath, path, false)
 
 		for k, v := range moduleData {
-			cell := &Cell{Value: v.Value}
-			cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
+			cell := &Cell{}
+			cell.Set(v.Get())
 
 			mainScope.Data[k] = cell
-			mainScope.Pointers[uintptr(cell.Ptr)] = cell
+			mainScope.Pointers[cell.Ptr] = cell
 		}
 		return
 	}
@@ -178,15 +275,15 @@ func mapToSlice[T any](m *orderedmap.OrderedMap[Cell, *Cell]) []T {
 
 		switch kind {
 		case reflect.Uint8:
-			if reflect.ValueOf(v.Value).Kind() == reflect.Float64 {
+			if reflect.ValueOf(v.Get()).Kind() == reflect.Float64 {
 				fk, _ := numberToFloat64(k)
-				slice[int(fk)] = any(byte(v.Value.(float64))).(T)
+				slice[int(fk)] = any(byte(v.Get().(float64))).(T)
 				break
 			}
 			fallthrough
 		default:
 			fk, _ := numberToFloat64(k)
-			slice[int(fk)] = v.Value.(T)
+			slice[int(fk)] = v.Get().(T)
 		}
 	}
 
@@ -198,7 +295,7 @@ func mapToSliceAny(m *orderedmap.OrderedMap[Cell, *Cell]) []any {
 
 	i := 0
 	for _, v := range m.AllFromFront() {
-		slice[i] = v.Value
+		slice[i] = v.Get()
 		i++
 	}
 
@@ -223,9 +320,13 @@ func getInterfaceType(v any) string {
 func NewScope(parent *Scope) *Scope {
 	return &Scope{
 		Data:     make(map[any]*Cell),
-		Pointers: make(map[uintptr]*Cell),
+		Pointers: make(map[unsafe.Pointer]*Cell),
 		Parent:   parent,
 	}
+}
+
+func ptrToAny(v any) unsafe.Pointer {
+	return *(*unsafe.Pointer)(unsafe.Pointer(&v))
 }
 
 func (scope *Scope) Add(key, value any) (success bool) {
@@ -235,23 +336,11 @@ func (scope *Scope) Add(key, value any) (success bool) {
 	if _, ok := scope.Data[key]; ok {
 		return false
 	}
-	cell := &Cell{Value: value}
-
-	switch value := value.(type) {
-	case *StructObject:
-		cell.Ptr = uintptr(value.Address())
-	case *orderedmap.OrderedMap[Cell, *Cell]:
-		sliceKind := mapToSliceAny(value)
-
-		ptr, _ := valueToPtr(sliceKind, 0, 0)
-
-		cell.Ptr = uintptr(unsafe.Pointer(ptr))
-	default:
-		cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
-	}
+	cell := &Cell{}
+	cell.Set(value)
 
 	scope.Data[key] = cell
-	scope.Pointers[uintptr(cell.Ptr)] = cell
+	scope.Pointers[cell.Ptr] = cell
 	return true
 }
 
@@ -260,14 +349,13 @@ func (scope *Scope) Set(key, value any, x, y int) (success bool) {
 		return true
 	}
 	if oldvalue, ok := scope.Data[key]; ok {
-		switch oldvalue.Value.(type) {
+		switch oldvalue.Get().(type) {
 		case *Structure, *FuncDec:
 			throw("Assignment to non-variable value", x, y)
 		}
 
 		cell := scope.Data[key]
-		cell.Value = value
-		cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
+		cell.Set(value)
 
 		return true
 	} else if scope.Parent != nil {
@@ -279,21 +367,29 @@ func (scope *Scope) Set(key, value any, x, y int) (success bool) {
 func (scope *Scope) Get(key any) any {
 	v, ok := scope.Data[key]
 	if ok {
-		return v.Value
+		return v.Get()
 	} else if scope.Parent != nil {
 		return scope.Parent.Get(key)
 	}
 	return nil
 }
 
-func (scope *Scope) GetWithAddress(ptr uintptr) any {
+func (scope *Scope) GetWithAddress(ptr unsafe.Pointer) any {
 	v, ok := scope.Pointers[ptr]
-	fmt.Println(scope.Pointers, scope.MainScope)
 	if ok {
-		fmt.Printf("%T\n", reflect.TypeOf(v.Value))
-		return v.Value
+		return v.Get()
 	} else if scope.Parent != nil {
 		return scope.Parent.GetWithAddress(ptr)
+	}
+	return nil
+}
+
+func (scope *Scope) GetCellWithAddress(ptr unsafe.Pointer) *Cell {
+	v, ok := scope.Pointers[ptr]
+	if ok {
+		return v
+	} else if scope.Parent != nil {
+		return scope.Parent.GetCellWithAddress(ptr)
 	}
 	return nil
 }
@@ -584,7 +680,7 @@ func (s *StructObject) Layout() []FieldLayout {
 				throwNoPos("Unsupported amount of bits: %d", field.LayoutType)
 			}
 		} else {
-			switch v := cell.Value.(type) {
+			switch v := cell.Get().(type) {
 			case *StructObject:
 				sub := v.Layout()
 				last := sub[len(sub)-1]
@@ -621,7 +717,7 @@ func (structObj *StructObject) Get(fieldName string) (any, bool) {
 	for _, field := range structObj.Fields {
 		if field.Identifier == fieldName {
 			cell := field.Value
-			return cell.Value, true
+			return cell.Get(), true
 		}
 	}
 	return nil, false
@@ -647,13 +743,12 @@ func (structObj *StructObject) Set(fieldName string, value any) bool {
 	for _, field := range structObj.Fields {
 		cell := field.Value
 		if field.Method {
-			method := cell.Value.(*FuncDec)
+			method := cell.Get().(*FuncDec)
 
 			throw("Cannot assign value to a instance's method.", method.X, method.Y)
 		}
 		if field.Identifier == fieldName {
-			cell.Value = value
-			cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
+			cell.Set(value)
 
 			return true
 		}
@@ -775,11 +870,11 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 			if cell == nil {
 				throw("Attempt to get a pointer of non-existing value.", node.X, node.Y)
 			}
+			if cell.Ptr == nil {
+				throw("Attempt to get pointer of nil value.", node.X, node.Y)
+			}
 
-			/*switch cellVal := cell.Value.(type) {
-			default:*/
 			return uintptr(cell.Ptr)
-			//}
 		case *GetElementNode:
 			tableNode, keyNodes := inter.GetTableAndKeys(srcNode, []Node{})
 			if tableNode == nil {
@@ -880,9 +975,9 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 
 	key := keys[index]
 
-	_, iscell := table.(*Cell)
+	tableCell, iscell := table.(*Cell)
 	if iscell {
-		table = table.(*Cell).Value
+		table = tableCell.Get()
 	}
 
 	switch table := table.(type) {
@@ -890,7 +985,7 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 		elem := table.GetElement(CL(key)).Value
 		var val any
 		if elem != nil {
-			val = elem.Value
+			val = elem.Get()
 		}
 
 		if index+1 < len(keys) {
@@ -933,7 +1028,7 @@ func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *Ge
 		}
 
 		if index+1 < len(keys) {
-			return inter.GetTableCellByKeys(val.Value, keys, getElemN, index+1)
+			return inter.GetTableCellByKeys(val.Get(), keys, getElemN, index+1)
 		}
 		return val
 	}
@@ -1091,7 +1186,7 @@ func (inter *Interpreter) SetTableElementValue(table *orderedmap.OrderedMap[Cell
 	key := keys[index]
 
 	elem := table.GetElement(CL(key))
-	switch elem := elem.Value.Value.(type) {
+	switch elem := elem.Value.Get().(type) {
 	case *orderedmap.OrderedMap[Cell, *Cell]:
 		if index+1 >= len(keys) {
 			table.Set(CL(key), CLPTR(value))
@@ -1232,10 +1327,8 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		}
 		fieldDecl.Func.Self = structObject
 
-		cell := &Cell{
-			Value: fieldDecl.Func,
-		}
-		cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
+		cell := &Cell{}
+		cell.Set(fieldDecl.Func)
 
 		fields = append(fields, &Field{
 			Identifier: fieldDecl.Identifier,
@@ -1254,9 +1347,8 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 
 		v := inter.GetNodeValueS(fieldNode.Value, fieldNode.Identifier.X, fieldNode.Identifier.Y)
 
-		cell := &Cell{
-			Value: v,
-		}
+		cell := &Cell{}
+
 		switch v := v.(type) {
 		case []any:
 			if len(v) > 1 {
@@ -1265,9 +1357,10 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 				throw("Cannot assign a field cannot be an empty value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
 			}
 
-			cell.Value = v[0]
+			cell.Set(v[0])
+		default:
+			cell.Set(v)
 		}
-		cell.Ptr = uintptr(unsafe.Pointer(&cell.Value))
 
 		bits := originalStructure.Fields[i].Bits
 
