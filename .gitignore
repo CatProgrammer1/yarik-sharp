@@ -2,6 +2,7 @@
 *.rar
 *.zip
 *.asm
+*.exe
 *.bin
 *.yks
-build/
+bin/

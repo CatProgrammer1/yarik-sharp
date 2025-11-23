@@ -237,7 +237,7 @@ func (lexer *Lexer) GetTokens() []Token {
 			if !found {
 				ident := lexer.GetIdentifier()
 				if ident.Value == nil {
-					throw("Kapec", lexer.CurrentColumn, lexer.CurrentLine)
+					throw("Bro I don't even know what to write in there. But you need to know that it's the only error in the lexer and you really did something wrong", lexer.CurrentColumn, lexer.CurrentLine)
 				}
 
 				if ident.Value == boolTrue {

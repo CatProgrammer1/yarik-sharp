@@ -34,13 +34,16 @@ type Cell struct {
 	InstanceValue *StructObject
 	TableValue    *orderedmap.OrderedMap[Cell, *Cell]
 	FuncValue     *FuncDec
+	ValuePtr      ValuePtr
 	PtrValue      uintptr
 	ErrorValue    error
 
-	DataType string // int, float, string, bool, struct, instance, table, ptr, func, error
+	DataType string // int, float, string, bool, struct, instance, table, ptr, func, error, "valueptr"
 	Ptr      unsafe.Pointer
 	Pinner   *runtime.Pinner
 }
+
+type ValuePtr uintptr
 
 func (cell *Cell) Set(value any) {
 	if cell.Pinner == nil {
@@ -90,6 +93,10 @@ func (cell *Cell) Set(value any) {
 		cell.PtrValue = value
 		cell.DataType = "ptr"
 		cell.Ptr = unsafe.Pointer(&cell.PtrValue)
+	case ValuePtr:
+		cell.ValuePtr = value
+		cell.DataType = "valueptr"
+		cell.Ptr = unsafe.Pointer(&cell.PtrValue)
 	case error:
 		cell.ErrorValue = value
 		cell.DataType = "error"
@@ -123,6 +130,8 @@ func (cell *Cell) Get() any {
 		return cell.FuncValue
 	case "error":
 		return cell.ErrorValue
+	case "valueptr":
+		return cell.ValuePtr
 	default:
 		fmt.Println(cell.DataType)
 		panic("Unsupported type in Cell.Get")
@@ -170,7 +179,7 @@ func format(v ...any) string {
 
 	for i, a := range v {
 		var suffix string
-		if i != 0 || i != len(v)-1 {
+		if i != 0 && i != len(v)-1 {
 			suffix = " "
 		}
 
@@ -204,6 +213,8 @@ func format(v ...any) string {
 			formated += fmt.Sprintf(structFormat, a.Identifier, fields) + suffix
 		case uintptr:
 			formated += fmt.Sprintf("%#x", a) + suffix
+		case ValuePtr:
+			formated += fmt.Sprintf("%#x", uintptr(a)) + suffix
 		case nil:
 			for k, t := range tokenTypes {
 				if t == "nil" {
@@ -341,6 +352,15 @@ func (scope *Scope) Add(key, value any) (success bool) {
 
 	scope.Data[key] = cell
 	scope.Pointers[cell.Ptr] = cell
+	switch value := value.(type) {
+	case *StructObject:
+		for _, field := range value.Fields {
+			fcell := field.Value
+
+			scope.Pointers[fcell.Ptr] = fcell
+		}
+	}
+
 	return true
 }
 
@@ -723,6 +743,16 @@ func (structObj *StructObject) Get(fieldName string) (any, bool) {
 	return nil, false
 }
 
+func (structObj *StructObject) GetCell(fieldName string) (*Cell, bool) {
+	for _, field := range structObj.Fields {
+		if field.Identifier == fieldName {
+			cell := field.Value
+			return cell, true
+		}
+	}
+	return nil, false
+}
+
 func (structObj *StructObject) CheckFormat(format ...[2]string) bool {
 	for _, format_i := range format {
 		fieldName := format_i[0]
@@ -874,7 +904,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 				throw("Attempt to get pointer of nil value.", node.X, node.Y)
 			}
 
-			return uintptr(cell.Ptr)
+			return ValuePtr(cell.Ptr)
 		case *GetElementNode:
 			tableNode, keyNodes := inter.GetTableAndKeys(srcNode, []Node{})
 			if tableNode == nil {
@@ -892,13 +922,41 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 			case *orderedmap.OrderedMap[Cell, *Cell], string:
 				cell := inter.GetTableCellByKeys(table, keys, srcNode, 0)
 
-				return uintptr(cell.Ptr)
+				return ValuePtr(cell.Ptr)
 			default:
 				throw("Cannot index non-table value.", node.X, node.Y)
 			}
+		case *GetFieldNode:
+			cell := inter.GetInstanceFieldCell(srcNode)
+			/*structObjNode, fieldNodes := inter.GetStructAndFieldNames(srcNode, []Node{})
+			if structObjNode == nil {
+				throw("Attempt to get field of nothing.", node.X, node.Y)
+			}
+
+			structObj, ok := inter.GetNodeValue(structObjNode).(*StructObject)
+			if !ok {
+				throw("Attempt to get field of a non-structure value.", structObjNode.Position(), structObjNode.Line())
+			}
+
+			fields := []string{}
+			for _, fieldNode := range fieldNodes {
+
+				fieldIdentNode, ok := fieldNode.(*IdentNode)
+				if !ok {
+					throw("Field name must be an identifier", fieldNode.Position(), fieldNode.Line())
+				}
+
+				fields = append(fields, fieldIdentNode.Value)
+			}
+
+			return inter.GetFieldValueByNames(structObj, fields, srcNode, 0)*/
+
+			return ValuePtr(cell.Ptr)
 		}
 	case *GetFieldNode:
-		structObjNode, fieldNodes := inter.GetStructAndFieldNames(node, []Node{})
+		cell := inter.GetInstanceFieldCell(node)
+
+		/*structObjNode, fieldNodes := inter.GetStructAndFieldNames(node, []Node{})
 		if structObjNode == nil {
 			throw("Attempt to get field of nothing.", node.X, node.Y)
 		}
@@ -919,7 +977,9 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 			fields = append(fields, fieldIdentNode.Value)
 		}
 
-		return inter.GetFieldValueByNames(structObj, fields, node, 0)
+		return inter.GetFieldValueByNames(structObj, fields, node, 0)*/
+
+		return cell.Get()
 	case *GetElementNode:
 		tableNode, keyNodes := inter.GetTableAndKeys(node, []Node{})
 		if tableNode == nil {
@@ -1071,6 +1131,54 @@ func (inter *Interpreter) GetFieldValueByNames(structObj *StructObject, fieldNam
 		return inter.GetFieldValueByNames(nextStructObj, fieldNames, getFieldN, index+1)
 	}
 	return val
+}
+
+func (inter *Interpreter) GetFieldCellByNames(structObj *StructObject, fieldNames []string, getFieldN *GetFieldNode, index int) *Cell {
+	if index >= len(fieldNames) {
+		return nil
+	}
+
+	fieldName := fieldNames[index]
+
+	val, ok := structObj.GetCell(fieldName)
+	if !ok {
+		throw("Attempt to get a value of nonexistent field '%s'", getFieldN.X, getFieldN.Y, fieldName)
+	}
+
+	if index+1 < len(fieldNames) {
+		nextStructObj, ok := val.Get().(*StructObject)
+		if !ok {
+			throw("Attempt to get field of a non-structure value", getFieldN.X, getFieldN.Y)
+		}
+
+		return inter.GetFieldCellByNames(nextStructObj, fieldNames, getFieldN, index+1)
+	}
+	return val
+}
+
+func (inter *Interpreter) GetInstanceFieldCell(getFieldNode *GetFieldNode) *Cell {
+	structObjNode, fieldNodes := inter.GetStructAndFieldNames(getFieldNode, []Node{})
+	if structObjNode == nil {
+		throw("Attempt to get field of nothing.", getFieldNode.X, getFieldNode.Y)
+	}
+
+	structObj, ok := inter.GetNodeValue(structObjNode).(*StructObject)
+	if !ok {
+		throw("Attempt to get field of a non-structure value.", structObjNode.Position(), structObjNode.Line())
+	}
+
+	fields := []string{}
+	for _, fieldNode := range fieldNodes {
+
+		fieldIdentNode, ok := fieldNode.(*IdentNode)
+		if !ok {
+			throw("Field name must be an identifier", fieldNode.Position(), fieldNode.Line())
+		}
+
+		fields = append(fields, fieldIdentNode.Value)
+	}
+
+	return inter.GetFieldCellByNames(structObj, fields, getFieldNode, 0)
 }
 
 func (inter *Interpreter) GetMap(node *MapNode) *orderedmap.OrderedMap[Cell, *Cell] {
@@ -1406,6 +1514,7 @@ func (inter *Interpreter) CookValues(max_i int, values [][]Node, x, y int) []any
 type ReturnNil struct{}
 
 func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) {
+	scope := inter.CurrentScope
 	switch node := node.(type) {
 	case *FuncDec:
 		if len(node.Identifier.Value) == 0 {
@@ -1444,6 +1553,32 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 				throw("Attempt to assign value to non-existing variable '%s'.", node.X, node.Y, node.Value)
 			}
 		}
+	case *IndirAssignNode:
+		valuePointerInterface := inter.GetNodeValue(node.Pointer)
+
+		valuePointer, ok := valuePointerInterface.(ValuePtr)
+		if !ok {
+			throw("Attempt to do indirect assignment with invalid pointer.", node.X, node.Y)
+		}
+
+		pointerCell := scope.GetCellWithAddress(unsafe.Pointer(valuePointer))
+		if pointerCell == nil {
+			throw("Attempt to do indirect assignment of non-existing pointer.", node.X, node.Y)
+		}
+
+		valuePtr, ok := pointerCell.Get().(ValuePtr)
+		if !ok {
+			throw("Attempt to do indirect assignment with non-pointer value.", node.X, node.Y)
+		}
+
+		cellOfPtr := scope.GetCellWithAddress(unsafe.Pointer(valuePtr))
+		if cellOfPtr == nil {
+			throw("Attempt to do indirect assignment of non-existing value.", node.X, node.Y)
+		}
+
+		newValue := inter.GetNodeValueS(node.Value, node.X, node.Y)
+
+		cellOfPtr.Set(newValue)
 	case *FuncCall:
 		inter.GetNodeValue(node)
 	case *SetElem:

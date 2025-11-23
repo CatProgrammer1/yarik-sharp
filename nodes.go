@@ -425,3 +425,17 @@ func (getptr *GetPtrNode) Position() int {
 func (getptr *GetPtrNode) Line() int {
 	return getptr.Y
 }
+
+type IndirAssignNode struct {
+	Value   []Node
+	Pointer *GetPtrNode
+
+	X, Y int
+}
+
+func (indirAssign *IndirAssignNode) Position() int {
+	return indirAssign.X
+}
+func (indirAssign *IndirAssignNode) Line() int {
+	return indirAssign.Y
+}

@@ -17,7 +17,7 @@ const (
 	shortennedPLName = "yks"
 
 	fileType            = ".yks"
-	major, minor, patch = 0, 6, 2
+	major, minor, patch = 0, 7, 3
 	stage               = "beta"
 )
 
@@ -57,19 +57,6 @@ func argsCheck(v []any, min, max int, expectedDataTypes ...string) {
 	}
 }
 
-func floatToPtr(f float64) uintptr {
-	return uintptr(math.Float64bits(f))
-}
-
-func ptrToFloat(p uintptr) float64 {
-	float := math.Float64frombits(uint64(p))
-	if math.IsNaN(float) {
-		return -1
-	}
-
-	return float
-}
-
 func numberToFloat64(n any) (float64, bool) {
 	switch n := n.(type) {
 	case float64:
@@ -106,8 +93,10 @@ func getValueType(v any) string {
 		return "void"
 	case string:
 		return "string"
-	case float64, int64:
-		return "number"
+	case float64:
+		return "float"
+	case int64:
+		return "int"
 	case bool:
 		return "bool"
 	case *orderedmap.OrderedMap[any, any]:
@@ -118,6 +107,10 @@ func getValueType(v any) string {
 		return "structure"
 	case *FuncDec:
 		return "func"
+	case uintptr, unsafe.Pointer:
+		return "pointer"
+	case ValuePtr:
+		return "valueptr"
 	case error:
 		return "error"
 	}
@@ -133,26 +126,18 @@ func checkDataType(expected string, v any) bool {
 
 		return ok
 	case "ptr":
-		_, ok := v.(unsafe.Pointer)
-
-		return ok
-	case "number":
-		oks := []bool{}
-
-		_, ok := v.(float64)
-		oks = append(oks, ok)
-
-		_, ok = v.(int64)
-		oks = append(oks, ok)
-
-		_, ok = v.(uintptr)
-		oks = append(oks, ok)
-
-		for _, ok := range oks {
-			if ok {
-				return ok
-			}
+		switch v.(type) {
+		case uintptr, unsafe.Pointer:
+			return true
 		}
+
+		return false
+	case "number":
+		switch v.(type) {
+		case int64, float64:
+			return true
+		}
+
 		return false
 	case "int":
 		_, ok := v.(int64)
@@ -276,7 +261,6 @@ func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 // ? go build -o bin/yks.exe yks
 // *go run -race yks runinfo test.yks
 func main() { //*go run yks runinfo test.yks
-
 	commands["build"] = func(args []string) {
 		//Lox
 		fmt.Println("Kys")

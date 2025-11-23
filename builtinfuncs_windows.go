@@ -172,10 +172,9 @@ var (
 			paramsMap := v[1].(*orderedmap.OrderedMap[Cell, *Cell])
 
 			params := make([]uintptr, paramsMap.Len())
-			buffers := make([]any, paramsMap.Len()) // ← Храним буферы здесь
+			buffers := make([]any, paramsMap.Len())
 			i := 0
 
-			// Подготавливаем параметры и сохраняем буферы
 			for _, v := range paramsMap.AllFromFront() {
 				ptr, buf := valueToPtr(v.Get(), x, y)
 				if buf != nil {
@@ -196,64 +195,6 @@ var (
 
 			r1, r2, err := proc.Call(params...)
 
-			// Обновляем структуры из памяти
-			for _, ptr := range params {
-				value := inter.CurrentScope.GetWithAddress(unsafe.Pointer(ptr))
-				if value == nil {
-					continue
-				}
-
-				switch instance := value.(type) {
-				case *StructObject:
-					layout := instance.Layout()
-
-					instance.FromMemoryLayout(layout)
-				}
-			}
-
-			return []any{r1, r2, err}
-		},
-
-		"call": func(v ...any) []any {
-			argsCheck(v, 3, 3, "string", "string", "table")
-
-			x, y := v[0].(int), v[1].(int)
-			inter := v[2].(*Interpreter)
-
-			v = v[BUILTIN_SPECIALS:]
-
-			dllName := v[0].(string)
-			procName := v[1].(string)
-			paramsMap := v[2].(*orderedmap.OrderedMap[Cell, *Cell])
-
-			params := make([]uintptr, paramsMap.Len())
-			buffers := make([]any, paramsMap.Len()) // ← Храним буферы здесь
-			i := 0
-
-			// Подготавливаем параметры и сохраняем буферы
-			for _, v := range paramsMap.AllFromFront() {
-				ptr, buf := valueToPtr(v.Get(), x, y)
-				if buf != nil {
-					buffers[i] = buf
-				}
-
-				params[i] = ptr
-				i++
-			}
-
-			fmt.Println(params)
-
-			ntdll := syscall.NewLazyDLL(dllName)
-			proc := ntdll.NewProc(procName)
-
-			procerr := proc.Find()
-			if procerr != nil {
-				return []any{uintptr(0), uintptr(0), procerr}
-			}
-
-			r1, r2, err := proc.Call(params...)
-
-			// Обновляем структуры из памяти
 			for _, ptr := range params {
 				value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
 				if value == nil {
@@ -287,6 +228,8 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
 	case float64:
 		return uintptr(math.Float64bits(val)), val
+	case ValuePtr:
+		return uintptr(val), val
 	case uintptr:
 		return val, nil
 	case unsafe.Pointer:

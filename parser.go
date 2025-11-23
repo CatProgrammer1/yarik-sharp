@@ -136,6 +136,41 @@ func getLastNode(nodes []Node) Node {
 	return nodes[len(nodes)-1]
 }
 
+func getValueOfNode(node Node) [][]Node {
+	switch node := node.(type) {
+	case *VarDec:
+		return node.Value
+	case *SetVar:
+		return node.Value
+	}
+	return [][]Node{}
+}
+
+func setValueOfNode(node Node, value [][]Node) {
+	switch node := node.(type) {
+	case *VarDec:
+		node.Value = value
+	case *SetVar:
+		node.Value = value
+	}
+}
+
+func getLastElementOf[T any](s []T) T {
+	if len(s) == 0 {
+		return *new(T)
+	}
+
+	return s[len(s)-1]
+}
+
+func setLastElementOf[T any](s []T, v T) {
+	if len(s) == 0 {
+		return
+	}
+
+	s[len(s)-1] = v
+}
+
 func newDataTypeNode(token Token) Node {
 	x, y := token.Position, token.Line
 
@@ -330,6 +365,18 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 		lastNode := getLastNode(nodes)
 		if lastNode != nil {
 			switch lastNode := lastNode.(type) {
+			case *GetPtrNode:
+				if lastNode.Src != nil {
+					parser.Next()
+					src := lastNode.Src
+
+					return replaceLastNodeWith(nodes, &IndirAssignNode{
+						Value:   parser.ParseValue(),
+						Pointer: lastNode,
+
+						X: src.Position(), Y: src.Line(),
+					})
+				}
 			case *IdentNode:
 				parser.Next()
 
@@ -379,7 +426,7 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 		"and", "or":
 		lastNode := getLastNode(nodes)
 		if lastNode == nil {
-			if currentToken.Type == "sub" {
+			if currentToken.Type == "sub" || currentToken.Type == "mul" {
 				parser.Next()
 				return append(nodes, &BinOpNode{
 					operator: currentToken.Type,
