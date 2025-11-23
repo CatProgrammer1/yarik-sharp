@@ -179,7 +179,7 @@ func format(v ...any) string {
 
 	for i, a := range v {
 		var suffix string
-		if i != 0 && i != len(v)-1 {
+		if i != len(v)-1 {
 			suffix = " "
 		}
 
@@ -496,6 +496,11 @@ func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 		mem = s.LastMem
 	}
 
+	fmt.Println("STRUCT", s.Identifier)
+	for _, field := range s.Fields {
+		fmt.Println(field.Identifier, field.Value.Get())
+	}
+
 	for _, lf := range layout {
 		val, ok := s.Get(lf.Name)
 		if !ok {
@@ -541,12 +546,16 @@ func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 		case "instance":
 			sub := val.(*StructObject)
 			sub.ToMemoryLayout(sub.Layout())
-			binary.LittleEndian.PutUint64(mem[offset:], uint64(uintptr(unsafe.Pointer(&sub.LastMem[0]))))
 
+			fmt.Println(sub.Identifier, sub.Fields)
+
+			binary.LittleEndian.PutUint64(mem[offset:], uint64(uintptr(unsafe.Pointer(&sub.LastMem[0]))))
 		default:
 			panic("Unsupported field type " + lf.Type)
 		}
 	}
+
+	fmt.Println("SIGMA")
 
 	s.LastMem = mem
 	return mem
@@ -1200,7 +1209,18 @@ func (inter *Interpreter) GetMap(node *MapNode) *orderedmap.OrderedMap[Cell, *Ce
 	for _, element := range node.Map {
 		key, value := inter.GetNodeValueS(element.Key, element.X, element.Y), inter.GetNodeValueS(element.Value, element.X, element.Y)
 
-		m.Set(CL(key), CLPTR(value))
+		values, ok := value.([]any)
+		if ok {
+			if len(values) > 1 {
+				throw("Field cannot have more than one value.", element.X, element.Y)
+			} else if len(values) == 0 {
+				throw("Cannot assign a field cannot be an empty value.", element.X, element.Y)
+			}
+
+			m.Set(CL(key), CLPTR(values[0]))
+		} else {
+			m.Set(CL(key), CLPTR(value))
+		}
 	}
 
 	return m

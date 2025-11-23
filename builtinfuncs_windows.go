@@ -228,6 +228,8 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
 	case float64:
 		return uintptr(math.Float64bits(val)), val
+	case int64:
+		return uintptr(val), val
 	case ValuePtr:
 		return uintptr(val), val
 	case uintptr:
@@ -245,6 +247,7 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 	case nil:
 		return 0, nil
 	default:
+		fmt.Printf("%T\n", val)
 		throw("Unsupported type.", x, y)
 	}
 	return 0, nil
