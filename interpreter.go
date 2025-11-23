@@ -186,11 +186,18 @@ func format(v ...any) string {
 		switch a := a.(type) {
 		case *orderedmap.OrderedMap[Cell, *Cell]:
 			mapFormat := "{%s}"
-			elemFormat := "[%s]: %s, "
+			elemFormat := "[%s]: %s,"
 
 			var elements string
+			i := 0
 			for k, v := range a.AllFromFront() {
-				elements += fmt.Sprintf(elemFormat, format(k.Get()), format(v.Get()))
+				var elementSuffix string
+				if i != a.Len()-1 {
+					elementSuffix = " "
+				}
+
+				elements += fmt.Sprintf(elemFormat+elementSuffix, format(k.Get()), format(v.Get()))
+				i++
 			}
 
 			formated += fmt.Sprintf(mapFormat, elements) + suffix
@@ -200,14 +207,20 @@ func format(v ...any) string {
 			formated += fmt.Sprintf("%p", a) + suffix
 		case *StructObject:
 			structFormat := "%s{%s}"
-			fieldFormat := "%s: %s; "
+			fieldFormat := "%s: %s;"
 
 			var fields string
 
+			i := 0
 			for _, field := range a.Fields {
+				var fieldSuffix string
+				if i != len(a.Fields)-1 {
+					fieldSuffix = " "
+				}
 				cell := field.Value
 
-				fields += fmt.Sprintf(fieldFormat, field.Identifier, format(cell.Get()))
+				fields += fmt.Sprintf(fieldFormat+fieldSuffix, field.Identifier, format(cell.Get()))
+				i++
 			}
 
 			formated += fmt.Sprintf(structFormat, a.Identifier, fields) + suffix
