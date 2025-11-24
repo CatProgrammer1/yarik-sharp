@@ -25,6 +25,8 @@ type Scope struct {
 	MainScope      bool
 }
 
+type ValuePtr uintptr
+
 type Cell struct {
 	IntValue      int64
 	FloatValue    float64
@@ -40,10 +42,9 @@ type Cell struct {
 
 	DataType string // int, float, string, bool, struct, instance, table, ptr, func, error, "valueptr"
 	Ptr      unsafe.Pointer
+	TempBuf  any
 	Pinner   *runtime.Pinner
 }
-
-type ValuePtr uintptr
 
 func (cell *Cell) Set(value any) {
 	if cell.Pinner == nil {
@@ -68,7 +69,13 @@ func (cell *Cell) Set(value any) {
 	case string:
 		cell.StringValue = value
 		cell.DataType = "string"
-		cell.Ptr = unsafe.Pointer(&cell.StringValue)
+
+		ptr, buf := valueToPtr(cell.StringValue, 0, 0)
+		cell.TempBuf = buf
+
+		cell.Ptr = unsafe.Pointer(ptr)
+
+		fmt.Println("\n\n\n\n\nSTRING", cell.StringValue, "\n\n\n\n\n\n\n\n")
 	case *StructObject:
 		cell.InstanceValue = value
 		cell.DataType = "instance"
@@ -96,11 +103,11 @@ func (cell *Cell) Set(value any) {
 	case ValuePtr:
 		cell.ValuePtr = value
 		cell.DataType = "valueptr"
-		cell.Ptr = unsafe.Pointer(&cell.PtrValue)
+		cell.Ptr = unsafe.Pointer(&cell.ValuePtr)
 	case error:
 		cell.ErrorValue = value
 		cell.DataType = "error"
-		cell.Ptr = unsafe.Pointer(&cell.PtrValue)
+		cell.Ptr = unsafe.Pointer(&cell.ErrorValue)
 	default:
 		fmt.Printf("%T\n", value)
 		panic("Unsupported type in Cell.Set")
@@ -496,13 +503,8 @@ func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 		mem = s.LastMem
 	}
 
-	fmt.Println("STRUCT", s.Identifier)
-	for _, field := range s.Fields {
-		fmt.Println(field.Identifier, field.Value.Get())
-	}
-
 	for _, lf := range layout {
-		val, ok := s.Get(lf.Name)
+		val, ok := s.GetCell(lf.Name)
 		if !ok {
 			continue
 		}
@@ -510,52 +512,47 @@ func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 		offset := int(lf.Offset)
 		switch lf.Type {
 		case "int8":
-			v := int8(toInt64(val))
+			v := int8(toInt64(val.Get()))
 			mem[offset] = byte(v)
 
 		case "uint8":
-			v := uint8(toInt64(val))
+			v := uint8(toInt64(val.Get()))
 			mem[offset] = byte(v)
 
 		case "int16":
-			v := int16(toInt64(val))
+			v := int16(toInt64(val.Get()))
 			binary.LittleEndian.PutUint16(mem[offset:], uint16(v))
 
 		case "uint16":
-			v := uint16(toInt64(val))
+			v := uint16(toInt64(val.Get()))
 			binary.LittleEndian.PutUint16(mem[offset:], v)
 
 		case "int32":
-			v := int32(toInt64(val))
+			v := int32(toInt64(val.Get()))
 			binary.LittleEndian.PutUint32(mem[offset:], uint32(v))
 
 		case "uint32":
-			v := uint32(toInt64(val))
+			v := uint32(toInt64(val.Get()))
 			binary.LittleEndian.PutUint32(mem[offset:], v)
 
 		case "int64":
-			v := int64(toInt64(val))
+			v := int64(toInt64(val.Get()))
 			binary.LittleEndian.PutUint64(mem[offset:], toUint64(v))
 
 		case "uint64", "uintptr", "ptr":
-			v := toUint64(val)
+			v := toUint64(val.Get())
 			binary.LittleEndian.PutUint64(mem[offset:], v)
 
 		case "float":
-			binary.LittleEndian.PutUint64(mem[offset:], toUint64(val))
+			binary.LittleEndian.PutUint64(mem[offset:], toUint64(val.Get()))
 		case "instance":
-			sub := val.(*StructObject)
-			sub.ToMemoryLayout(sub.Layout())
+			binary.LittleEndian.PutUint64(mem[offset:], uint64(uintptr(val.Ptr)))
+			fmt.Println("Sub inst")
 
-			fmt.Println(sub.Identifier, sub.Fields)
-
-			binary.LittleEndian.PutUint64(mem[offset:], uint64(uintptr(unsafe.Pointer(&sub.LastMem[0]))))
 		default:
 			panic("Unsupported field type " + lf.Type)
 		}
 	}
-
-	fmt.Println("SIGMA")
 
 	s.LastMem = mem
 	return mem
@@ -729,7 +726,7 @@ func (s *StructObject) Layout() []FieldLayout {
 				size = last.Offset + last.Size
 
 				align, typ = 8, "instance"
-			case unsafe.Pointer, uintptr:
+			case unsafe.Pointer, uintptr, ValuePtr:
 				size, align, typ = 8, 8, "ptr"
 			case int64:
 				size, align, typ = 8, 8, "int64"

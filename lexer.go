@@ -344,8 +344,9 @@ func (lexer *Lexer) GetString(startChar string) Token {
 				lexer.NextTimes(2)
 				continue
 			}
+		} else {
+			str += charStr
 		}
-		str += charStr
 		lexer.Next()
 	}
 

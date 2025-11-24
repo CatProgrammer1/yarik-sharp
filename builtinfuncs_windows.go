@@ -214,6 +214,61 @@ var (
 			return []any{r1, r2, err}
 		},
 
+		"call": func(v ...any) []any {
+			argsCheck(v, 3, 3, "string", "string", "table")
+
+			x, y := v[0].(int), v[1].(int)
+			inter := v[2].(*Interpreter)
+
+			v = v[BUILTIN_SPECIALS:]
+
+			dllname := v[0].(string)
+			procName := v[1].(string)
+			paramsMap := v[2].(*orderedmap.OrderedMap[Cell, *Cell])
+
+			params := make([]uintptr, paramsMap.Len())
+			buffers := make([]any, paramsMap.Len())
+			i := 0
+
+			for _, v := range paramsMap.AllFromFront() {
+				ptr, buf := valueToPtr(v.Get(), x, y)
+				if buf != nil {
+					buffers[i] = buf
+				}
+
+				params[i] = ptr
+				i++
+			}
+
+			ntdll := syscall.NewLazyDLL(dllname)
+			proc := ntdll.NewProc(procName)
+
+			procerr := proc.Find()
+			if procerr != nil {
+				return []any{uintptr(0), uintptr(0), procerr}
+			}
+
+			r1, r2, err := proc.Call(params...)
+
+			for _, ptr := range params {
+				value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
+				if value == nil {
+					continue
+				}
+
+				instance, ok := value.Get().(*StructObject)
+				if !ok {
+					continue
+				}
+
+				layout := instance.Layout()
+
+				instance.FromMemoryLayout(layout)
+			}
+
+			return []any{r1, r2, err}
+		},
+
 		"ptr": func(v ...any) []any {
 			argsCheck(v, 1, 1, "int")
 
@@ -227,6 +282,7 @@ var (
 func valueToPtr(v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
 	case float64:
+		fmt.Println("\n\nNISDADSD FLOATT\n\n")
 		return uintptr(math.Float64bits(val)), val
 	case int64:
 		return uintptr(val), val
@@ -250,5 +306,6 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 		fmt.Printf("%T\n", val)
 		throw("Unsupported type.", x, y)
 	}
+	fmt.Println("\n\n\nSUPER NIGGGAAAAAAA\n\n\n")
 	return 0, nil
 }
