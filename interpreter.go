@@ -74,8 +74,6 @@ func (cell *Cell) Set(value any) {
 		cell.TempBuf = buf
 
 		cell.Ptr = unsafe.Pointer(ptr)
-
-		fmt.Println("\n\n\n\n\nSTRING", cell.StringValue, "\n\n\n\n\n\n\n\n")
 	case *StructObject:
 		cell.InstanceValue = value
 		cell.DataType = "instance"
@@ -545,9 +543,13 @@ func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 
 		case "float":
 			binary.LittleEndian.PutUint64(mem[offset:], toUint64(val.Get()))
+		case "bool":
+			mem[offset] = byte(toUint64(val.Get()))
 		case "instance":
-			binary.LittleEndian.PutUint64(mem[offset:], uint64(uintptr(val.Ptr)))
-			fmt.Println("Sub inst")
+			//binary.LittleEndian.PutUint64(mem[offset:], uint64(uintptr(val.Ptr)))
+			instance := val.Get().(*StructObject)
+
+			copy(mem[offset:], instance.LastMem)
 
 		default:
 			panic("Unsupported field type " + lf.Type)
@@ -604,14 +606,28 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout) {
 			bits := binary.LittleEndian.Uint64(mem[offset:])
 			v := math.Float64frombits(bits)
 			s.Set(lf.Name, v)
+		case "bool":
+			v := mem[offset]
+			s.Set(lf.Name, v == 1)
+		/*case "instance":
+		ptr := binary.LittleEndian.Uint64(mem[offset:])
+		if ptr == 0 {
+			s.Set(lf.Name, nil)
+			continue
+		}
 
+		val, ok := s.Get(lf.Name)
+		if !ok || val == nil {
+			continue
+		}
+		sub := val.(*StructObject)
+		subLayout := sub.Layout()
+		subSize := subLayout[len(subLayout)-1].Offset + subLayout[len(subLayout)-1].Size
+
+		subMem := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(ptr))), subSize)
+		sub.LastMem = append([]byte(nil), subMem...)
+		sub.FromMemoryLayout(subLayout)*/
 		case "instance":
-			ptr := binary.LittleEndian.Uint64(mem[offset:])
-			if ptr == 0 {
-				s.Set(lf.Name, nil)
-				continue
-			}
-
 			val, ok := s.Get(lf.Name)
 			if !ok || val == nil {
 				continue
@@ -620,10 +636,15 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout) {
 			subLayout := sub.Layout()
 			subSize := subLayout[len(subLayout)-1].Offset + subLayout[len(subLayout)-1].Size
 
-			subMem := unsafe.Slice((*byte)(unsafe.Pointer(uintptr(ptr))), subSize)
-			sub.LastMem = append([]byte(nil), subMem...)
-			sub.FromMemoryLayout(subLayout)
+			// Берём данные из памяти по offset
+			if offset+int(subSize) > len(mem) {
+				panic("memory slice out of bounds")
+			}
+			subMem := make([]byte, subSize)
+			copy(subMem, mem[offset:offset+int(subSize)])
 
+			sub.LastMem = subMem
+			sub.FromMemoryLayout(subLayout)
 		default:
 			panic("Unsupported field type " + lf.Type)
 		}
@@ -682,6 +703,11 @@ func toUint64(v any) uint64 {
 		return uint64(val)
 	case uintptr:
 		return uint64(val)
+	case bool:
+		if val {
+			return 1
+		}
+		return 0
 	default:
 		return 0
 	}
@@ -709,6 +735,8 @@ func (s *StructObject) Layout() []FieldLayout {
 				prefix = "u"
 			}
 			switch int64(math.Abs(float64(field.LayoutType))) {
+			case 8:
+				size, align, typ = 1, 1, prefix+"int8"
 			case 16:
 				size, align, typ = 2, 2, prefix+"int16"
 			case 32:
@@ -730,6 +758,8 @@ func (s *StructObject) Layout() []FieldLayout {
 				size, align, typ = 8, 8, "ptr"
 			case int64:
 				size, align, typ = 8, 8, "int64"
+			case bool:
+				size, align, typ = 1, 1, "bool"
 			case float64:
 				size, align, typ = 8, 8, "float"
 			default:
@@ -923,7 +953,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 				throw("Attempt to get pointer of nil value.", node.X, node.Y)
 			}
 
-			return ValuePtr(cell.Ptr)
+			return uintptr(cell.Ptr)
 		case *GetElementNode:
 			tableNode, keyNodes := inter.GetTableAndKeys(srcNode, []Node{})
 			if tableNode == nil {
@@ -941,7 +971,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 			case *orderedmap.OrderedMap[Cell, *Cell], string:
 				cell := inter.GetTableCellByKeys(table, keys, srcNode, 0)
 
-				return ValuePtr(cell.Ptr)
+				return cell.Ptr
 			default:
 				throw("Cannot index non-table value.", node.X, node.Y)
 			}
@@ -970,7 +1000,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 
 			return inter.GetFieldValueByNames(structObj, fields, srcNode, 0)*/
 
-			return ValuePtr(cell.Ptr)
+			return cell.Ptr
 		}
 	case *GetFieldNode:
 		cell := inter.GetInstanceFieldCell(node)
@@ -1476,11 +1506,12 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 	}
 
 	for i, fieldNode := range structObjNode.Fields {
-		if !originalStructure.CheckField(fieldNode.Identifier.Value) {
-			throw("Attempt to assign a nonexistent field of structure '%s' while trying to make an instance.", structObjNode.X, structObjNode.Y, identifier)
+		fieldName := fieldNode.Identifier.Value
+		if !originalStructure.CheckField(fieldName) {
+			throw("Attempt to assign a nonexistent field '%s' of structure '%s' while trying to make an instance.", structObjNode.X, structObjNode.Y, fieldName, identifier)
 		}
-		if originalStructure.IsAFunc(fieldNode.Identifier.Value) {
-			throw("Attempt to assign a value for a method of structure '%s'.", structObjNode.X, structObjNode.Y, identifier)
+		if originalStructure.IsAFunc(fieldName) {
+			throw("Attempt to assign a value for a method '%s' of structure '%s'.", structObjNode.X, structObjNode.Y, fieldName, identifier)
 		}
 
 		v := inter.GetNodeValueS(fieldNode.Value, fieldNode.Identifier.X, fieldNode.Identifier.Y)
@@ -1586,7 +1617,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 	case *IndirAssignNode:
 		valuePointerInterface := inter.GetNodeValue(node.Pointer)
 
-		valuePointer, ok := valuePointerInterface.(ValuePtr)
+		valuePointer, ok := valuePointerInterface.(uintptr)
 		if !ok {
 			throw("Attempt to do indirect assignment with invalid pointer.", node.X, node.Y)
 		}
@@ -1596,7 +1627,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 			throw("Attempt to do indirect assignment of non-existing pointer.", node.X, node.Y)
 		}
 
-		valuePtr, ok := pointerCell.Get().(ValuePtr)
+		valuePtr, ok := pointerCell.Get().(uintptr)
 		if !ok {
 			throw("Attempt to do indirect assignment with non-pointer value.", node.X, node.Y)
 		}

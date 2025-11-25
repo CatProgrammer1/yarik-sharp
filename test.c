@@ -1,89 +1,73 @@
+//gcc -shared -o test_struct.dll test.c
+
 #include <windows.h>
 #include <winternl.h>
 #include <stdio.h>
 
-//gcc -shared -o test_struct.dll test.c
+// Определяем тип функции NtOpenFile
+typedef NTSTATUS (NTAPI *NtOpenFile_t)(
+    PHANDLE            FileHandle,
+    ACCESS_MASK        DesiredAccess,
+    POBJECT_ATTRIBUTES ObjectAttributes,
+    PIO_STATUS_BLOCK   IoStatusBlock,
+    ULONG              ShareAccess,
+    ULONG              OpenOptions
+);
 
-// Проверка валидности любого указателя
-int is_valid_ptr(void* p, SIZE_T size) {
-    MEMORY_BASIC_INFORMATION mbi;
-    if (!VirtualQuery(p, &mbi, sizeof(mbi)))
-        return 0;
-
-    return (mbi.State == MEM_COMMIT &&
-            !(mbi.Protect & PAGE_NOACCESS) &&
-            !(mbi.Protect & PAGE_GUARD));
-}
-
-// Печать текста из UNICODE_STRING
-void print_unicode_string(UNICODE_STRING* ustr) {
-    if (!ustr) {
-        printf("(UNICODE_STRING = NULL)\n");
-        return;
-    }
-    if (!ustr->Buffer) {
-        printf("(Buffer = NULL)\n");
-        return;
-    }
-    
-    // Length в байтах, поэтому делим на sizeof(WCHAR)
-    wprintf(L"%.*ls\n", ustr->Length / sizeof(WCHAR), ustr->Buffer);
-}
-
-__declspec(dllexport)
-void DumpObjectAttributes(HANDLE* h, POBJECT_ATTRIBUTES oa, PIO_STATUS_BLOCK iosb)
+__declspec(dllexport) NTSTATUS NtOpenFile(
+    PHANDLE            FileHandle,
+    ACCESS_MASK        DesiredAccess,
+    POBJECT_ATTRIBUTES ObjectAttributes,
+    PIO_STATUS_BLOCK   IoStatusBlock,
+    ULONG              ShareAccess,
+    ULONG              OpenOptions
+)
 {
-    printf("\n==================== DUMP ====================\n");
+    printf("=== NtOpenFile Arguments ===\n");
 
-    // HANDLE*
-    printf("Handle ptr: %p  valid=%d\n", h, is_valid_ptr(h, sizeof(HANDLE)));
-    if (is_valid_ptr(h, sizeof(HANDLE)))
-        printf("Handle value: 0x%p\n", *h);
-
-    // OBJECT_ATTRIBUTES
-    printf("\nOBJECT_ATTRIBUTES ptr: %p  valid=%d\n",
-           oa, is_valid_ptr(oa, sizeof(OBJECT_ATTRIBUTES)));
-
-    if (!oa || !is_valid_ptr(oa, sizeof(OBJECT_ATTRIBUTES))) {
-        printf("oa invalid or NULL\n");
-        goto END;
+    printf("FileHandle: %p\n", FileHandle);
+    if (FileHandle) {
+        printf("  *FileHandle: %p\n", *FileHandle);
     }
 
-    printf("Length: %lu\n", oa->Length);
-    printf("RootDirectory: %p\n", oa->RootDirectory);
-    printf("ObjectName ptr: %p  valid=%d\n",
-           oa->ObjectName,
-           is_valid_ptr(oa->ObjectName, sizeof(UNICODE_STRING)));
-    printf("Attributes: 0x%lx\n", oa->Attributes);
+    printf("DesiredAccess: 0x%X\n", DesiredAccess);
 
-    // UNICODE_STRING
-    if (oa->ObjectName && is_valid_ptr(oa->ObjectName, sizeof(UNICODE_STRING))) {
-        printf("\nUNICODE_STRING:\n");
-        printf("  Length: %u\n", oa->ObjectName->Length);
-        printf("  MaximumLength: %u\n", oa->ObjectName->MaximumLength);
-        printf("Buffer hex %#x\n", oa->ObjectName->Buffer);
-        printf("  Buffer ptr: %p  valid=%d\n",
-               oa->ObjectName->Buffer,
-               is_valid_ptr(oa->ObjectName->Buffer, oa->ObjectName->Length));
+    if (ObjectAttributes) {
+        printf("ObjectAttributes: %p\n", ObjectAttributes);
+        printf("%p\n", ObjectAttributes->ObjectName);
+        if (ObjectAttributes->ObjectName && ObjectAttributes->ObjectName->Buffer) {
+            printf("OKAY I GOT HERE");
+            wprintf(L"  ObjectName: %.*ls\n",
+                    ObjectAttributes->ObjectName->Length / sizeof(WCHAR),
+                    ObjectAttributes->ObjectName->Buffer);
+        }
+        printf("SIGMA");
+        printf("  Attributes: 0x%X\n", ObjectAttributes->Attributes);
+        if (ObjectAttributes->SecurityQualityOfService) {
+            SECURITY_QUALITY_OF_SERVICE* sqos = (SECURITY_QUALITY_OF_SERVICE*)ObjectAttributes->SecurityQualityOfService;
 
-        printf("  Text: ");
-        print_unicode_string(oa->ObjectName);
-    } else {
-        printf("\nObjectName is NULL or invalid\n");
+            printf("  SecurityQualityOfService: %p\n", ObjectAttributes->SecurityQualityOfService);
+            printf("    Length: %u\n", sqos->Length);
+            printf("    ImpersonationLevel: %u\n", sqos->ImpersonationLevel);
+            printf("    ContextTrackingMode: %u\n", sqos->ContextTrackingMode);
+            printf("    EffectiveOnly: %u\n", sqos->EffectiveOnly);
+        } else {
+            printf("  SecurityQualityOfService: NULL\n");
+        }
     }
 
-    // IO_STATUS_BLOCK
-    printf("\nIO_STATUS_BLOCK ptr: %p  valid=%d\n",
-           iosb,
-           is_valid_ptr(iosb, sizeof(IO_STATUS_BLOCK)));
-
-    if (iosb && is_valid_ptr(iosb, sizeof(IO_STATUS_BLOCK))) {
-        printf("  Status: 0x%lx\n", iosb->Status);
-        printf("  Information: 0x%p\n", (void*)iosb->Information);
+    if (IoStatusBlock) {
+        printf("IoStatusBlock: %p\n", IoStatusBlock);
     }
 
-    *h = *h = (HANDLE)(uintptr_t)1000;
+    printf("ShareAccess: 0x%X\n", ShareAccess);
+    printf("OpenOptions: 0x%X\n", OpenOptions);
 
-END:
-    printf("=============== END OF DUMP =================\n\n");
+    *FileHandle = (HANDLE)1000;
+
+    IoStatusBlock->Information = 10000;
+    IoStatusBlock->Status = 10000;
+
+    // Возвращаем STATUS_SUCCESS, не открывая файл
+    return 0;
 }

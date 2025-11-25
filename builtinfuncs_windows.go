@@ -215,6 +215,7 @@ var (
 		},
 
 		"call": func(v ...any) []any {
+
 			argsCheck(v, 3, 3, "string", "string", "table")
 
 			x, y := v[0].(int), v[1].(int)
@@ -275,6 +276,14 @@ var (
 			v = v[BUILTIN_SPECIALS:]
 
 			return []any{uintptr(v[0].(int64))}
+		},
+
+		"pvoid": func(v ...any) []any {
+			argsCheck(v, 1, 1, "int")
+
+			v = v[BUILTIN_SPECIALS:]
+
+			return []any{unsafe.Pointer(uintptr(v[0].(int64)))}
 		},
 	}
 )

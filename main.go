@@ -10,7 +10,10 @@ import (
 
 	"github.com/elliotchance/orderedmap/v3"
 )
-import "unsafe"
+import (
+	"runtime"
+	"unsafe"
+)
 
 const (
 	plName           = "Yarik#"
@@ -287,6 +290,9 @@ func main() { //*go run yks runinfo test.yks
 	}
 	commands["version"] = func(args []string) {
 		fmt.Printf("%s version %s%d.%d.%d-%s", plName, shortennedPLName, major, minor, patch, stage)
+	}
+	commands["arch"] = func(args []string) {
+		fmt.Println(runtime.GOARCH)
 	}
 	commands["help"] = help
 
