@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/elliotchance/orderedmap/v3"
 )
 import (
 	"runtime"
@@ -102,7 +100,7 @@ func getValueType(v any) string {
 		return "int"
 	case bool:
 		return "bool"
-	case *orderedmap.OrderedMap[any, any]:
+	case *Map:
 		return "table"
 	case *StructObject:
 		return "instance"
@@ -153,7 +151,7 @@ func checkDataType(expected string, v any) bool {
 
 		return ok
 	case "table":
-		_, ok := v.(*orderedmap.OrderedMap[Cell, *Cell])
+		_, ok := v.(*Map)
 
 		return ok
 	case "instancestrict":

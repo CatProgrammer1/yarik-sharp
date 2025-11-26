@@ -43,6 +43,8 @@ type Cell struct {
 	Ptr      unsafe.Pointer
 	TempBuf  any
 	Pinner   *runtime.Pinner
+
+	Scope *Scope
 }
 
 func (cell *Cell) Set(value any) {
@@ -89,7 +91,7 @@ func (cell *Cell) Set(value any) {
 		cell.TableValue = value
 		cell.DataType = "table"
 
-		cell.Ptr = unsafe.Pointer(value)
+		cell.Ptr = unsafe.Pointer(value.Address())
 	case unsafe.Pointer:
 		cell.PtrValue = uintptr(value)
 		cell.DataType = "ptr"
@@ -530,6 +532,9 @@ func (scope *Scope) Set(key, value any, x, y int) (success bool) {
 		}
 
 		cell := scope.Data[key]
+		if cell.Ptr != nil {
+			delete(scope.Pointers, cell.Ptr)
+		}
 		cell.Set(value)
 
 		return true

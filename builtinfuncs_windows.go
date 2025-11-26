@@ -169,7 +169,7 @@ var (
 			v = v[BUILTIN_SPECIALS:]
 
 			procName := v[0].(string)
-			paramsMap := v[1].(*orderedmap.OrderedMap[Cell, *Cell])
+			paramsMap := v[1].(*Map)
 
 			params := make([]uintptr, paramsMap.Len())
 			buffers := make([]any, paramsMap.Len())
@@ -224,7 +224,7 @@ var (
 
 			dllname := v[0].(string)
 			procName := v[1].(string)
-			paramsMap := v[2].(*orderedmap.OrderedMap[Cell, *Cell])
+			paramsMap := v[2].(*Map)
 
 			params := make([]uintptr, paramsMap.Len())
 			buffers := make([]any, paramsMap.Len())
@@ -256,14 +256,14 @@ var (
 					continue
 				}
 
-				instance, ok := value.Get().(*StructObject)
-				if !ok {
-					continue
+				switch value := value.Get().(type) {
+				case *StructObject:
+					layout := value.Layout()
+
+					value.FromMemoryLayout(layout)
+				case *Map:
+					value.FromMemory()
 				}
-
-				layout := instance.Layout()
-
-				instance.FromMemoryLayout(layout)
 			}
 
 			return []any{r1, r2, err}
