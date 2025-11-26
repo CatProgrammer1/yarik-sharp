@@ -145,7 +145,7 @@ var (
 
 			v = v[BUILTIN_SPECIALS:]
 
-			b := v[0].(*orderedmap.OrderedMap[Cell, *Cell])
+			b := v[0].(*Map)
 
 			return []any{string(mapToSlice[byte](b))}
 		},
@@ -201,21 +201,20 @@ var (
 					continue
 				}
 
-				instance, ok := value.Get().(*StructObject)
-				if !ok {
-					continue
+				switch value := value.Get().(type) {
+				case *StructObject:
+					layout := value.Layout()
+
+					value.FromMemoryLayout(layout)
+				case *Map:
+					value.FromMemory()
 				}
-
-				layout := instance.Layout()
-
-				instance.FromMemoryLayout(layout)
 			}
 
 			return []any{r1, r2, err}
 		},
 
 		"call": func(v ...any) []any {
-
 			argsCheck(v, 3, 3, "string", "string", "table")
 
 			x, y := v[0].(int), v[1].(int)
@@ -291,11 +290,8 @@ var (
 func valueToPtr(v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
 	case float64:
-		fmt.Println("\n\nNISDADSD FLOATT\n\n")
 		return uintptr(math.Float64bits(val)), val
 	case int64:
-		return uintptr(val), val
-	case ValuePtr:
 		return uintptr(val), val
 	case uintptr:
 		return val, nil
@@ -303,6 +299,8 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 		return uintptr(val), val
 	case *StructObject:
 		return val.Address(), val.LastMem
+	case *Map:
+		return val.Address(), val.Mem
 	case []any:
 		return uintptr(unsafe.Pointer(&val[0])), val
 	case string:
@@ -315,6 +313,5 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 		fmt.Printf("%T\n", val)
 		throw("Unsupported type.", x, y)
 	}
-	fmt.Println("\n\n\nSUPER NIGGGAAAAAAA\n\n\n")
 	return 0, nil
 }

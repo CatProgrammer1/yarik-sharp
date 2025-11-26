@@ -112,8 +112,6 @@ func getValueType(v any) string {
 		return "func"
 	case uintptr, unsafe.Pointer:
 		return "pointer"
-	case ValuePtr:
-		return "valueptr"
 	case error:
 		return "error"
 	}

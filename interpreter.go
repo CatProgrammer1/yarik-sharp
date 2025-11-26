@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -25,8 +27,6 @@ type Scope struct {
 	MainScope      bool
 }
 
-type ValuePtr uintptr
-
 type Cell struct {
 	IntValue      int64
 	FloatValue    float64
@@ -34,9 +34,8 @@ type Cell struct {
 	StringValue   string
 	StructValue   *Structure
 	InstanceValue *StructObject
-	TableValue    *orderedmap.OrderedMap[Cell, *Cell]
+	TableValue    *Map
 	FuncValue     *FuncDec
-	ValuePtr      ValuePtr
 	PtrValue      uintptr
 	ErrorValue    error
 
@@ -86,9 +85,10 @@ func (cell *Cell) Set(value any) {
 		cell.FuncValue = value
 		cell.DataType = "func"
 		cell.Ptr = unsafe.Pointer(value)
-	case *orderedmap.OrderedMap[Cell, *Cell]:
+	case *Map:
 		cell.TableValue = value
 		cell.DataType = "table"
+
 		cell.Ptr = unsafe.Pointer(value)
 	case unsafe.Pointer:
 		cell.PtrValue = uintptr(value)
@@ -98,10 +98,6 @@ func (cell *Cell) Set(value any) {
 		cell.PtrValue = value
 		cell.DataType = "ptr"
 		cell.Ptr = unsafe.Pointer(&cell.PtrValue)
-	case ValuePtr:
-		cell.ValuePtr = value
-		cell.DataType = "valueptr"
-		cell.Ptr = unsafe.Pointer(&cell.ValuePtr)
 	case error:
 		cell.ErrorValue = value
 		cell.DataType = "error"
@@ -135,8 +131,6 @@ func (cell *Cell) Get() any {
 		return cell.FuncValue
 	case "error":
 		return cell.ErrorValue
-	case "valueptr":
-		return cell.ValuePtr
 	default:
 		fmt.Println(cell.DataType)
 		panic("Unsupported type in Cell.Get")
@@ -168,6 +162,157 @@ func checkType[T any](v any) bool {
 	return ok
 }
 
+type Map struct {
+	*orderedmap.OrderedMap[Cell, *Cell]
+
+	Pointers []any
+	Layout   []string
+	Mem      []byte
+}
+
+func anyToBytes(v []any, m *Map) []byte {
+	buf := new(bytes.Buffer)
+
+	m.Layout = []string{}
+	m.Pointers = []any{}
+
+	for _, x := range v {
+		switch t := x.(type) {
+		case int64:
+			m.Layout = append(m.Layout, "int")
+			m.Pointers = append(m.Pointers, nil)
+
+			binary.Write(buf, binary.LittleEndian, t)
+		case float64:
+			m.Layout = append(m.Layout, "float")
+			m.Pointers = append(m.Pointers, nil)
+
+			binary.Write(buf, binary.LittleEndian, t)
+		case bool:
+			m.Layout = append(m.Layout, "bool")
+			m.Pointers = append(m.Pointers, nil)
+
+			binary.Write(buf, binary.LittleEndian, t)
+		case string:
+			m.Layout = append(m.Layout, "string")
+			m.Pointers = append(m.Pointers, nil)
+
+			binary.Write(buf, binary.LittleEndian, append([]byte(t), 0))
+		case error:
+			m.Layout = append(m.Layout, "error")
+			m.Pointers = append(m.Pointers, nil)
+
+			binary.Write(buf, binary.LittleEndian, append([]byte(t.Error()), 0))
+		case uintptr:
+			m.Layout = append(m.Layout, "ptr")
+			m.Pointers = append(m.Pointers, nil)
+
+			binary.Write(buf, binary.LittleEndian, uint64(t))
+		case unsafe.Pointer:
+			m.Layout = append(m.Layout, "ptr")
+			m.Pointers = append(m.Pointers, nil)
+
+			binary.Write(buf, binary.LittleEndian, uint64(uintptr(t)))
+		case *Map:
+			m.Layout = append(m.Layout, "table")
+			m.Pointers = append(m.Pointers, t)
+
+			binary.Write(buf, binary.LittleEndian, uint32(len(t.Mem)))
+			buf.Write(t.Mem)
+		default:
+			panic("Unsupported type")
+		}
+	}
+	return buf.Bytes()
+}
+
+func bytesToAny(mem []byte, layout []string, pointers []any) []any {
+	var res []any
+	r := bytes.NewReader(mem)
+
+	for i, t := range layout {
+		switch t {
+		case "table":
+			var ln uint32
+			binary.Read(r, binary.LittleEndian, &ln)
+
+			b := make([]byte, ln)
+			_, err := r.Read(b)
+			if err != nil {
+				panic("Failed to read table bytes")
+			}
+
+			m, ok := pointers[i].(*Map)
+			if !ok {
+				panic("Failed to find table's pointer")
+			}
+
+			m.Mem = b
+			res = append(res, m)
+		case "int":
+			var v int64
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res = append(res, v)
+		case "ptr":
+			var v uint64
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res = append(res, uintptr(v))
+		case "float":
+			var v float64
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res = append(res, v)
+		case "bool":
+			var b byte
+			binary.Read(r, binary.LittleEndian, &b)
+
+			res = append(res, b != 0)
+		case "string":
+			var ln uint32
+			handle(binary.Read(r, binary.LittleEndian, &ln))
+
+			b := make([]byte, ln)
+			_, err := r.Read(b)
+			handle(err)
+
+			res = append(res, string(b))
+		case "error":
+			var ln uint32
+			handle(binary.Read(r, binary.LittleEndian, &ln))
+
+			b := make([]byte, ln)
+			_, err := r.Read(b)
+			handle(err)
+
+			res = append(res, errors.New(string(b)))
+		default:
+			panic("Unsupported type: " + t)
+		}
+	}
+
+	return res
+}
+
+func (m *Map) ToMemory() {
+	m.Mem = anyToBytes(mapToSliceAny(m), m)
+}
+
+func (m *Map) FromMemory() {
+	s := bytesToAny(m.Mem, m.Layout, m.Pointers)
+
+	i := 0
+	for _, value := range m.AllFromFront() {
+		value.Set(s[i])
+		i++
+	}
+}
+
+func (m *Map) Address() uintptr {
+	return uintptr(unsafe.Pointer(&m.Mem[0]))
+}
+
 var (
 	filesBeingUsed = [][2]string{}
 
@@ -189,7 +334,7 @@ func format(v ...any) string {
 		}
 
 		switch a := a.(type) {
-		case *orderedmap.OrderedMap[Cell, *Cell]:
+		case *Map:
 			mapFormat := "{%s}"
 			elemFormat := "[%s]: %s,"
 
@@ -231,8 +376,6 @@ func format(v ...any) string {
 			formated += fmt.Sprintf(structFormat, a.Identifier, fields) + suffix
 		case uintptr:
 			formated += fmt.Sprintf("%#x", a) + suffix
-		case ValuePtr:
-			formated += fmt.Sprintf("%#x", uintptr(a)) + suffix
 		case nil:
 			for k, t := range tokenTypes {
 				if t == "nil" {
@@ -294,7 +437,7 @@ func importModule(path string, mainScope *Scope) {
 	throwNoPos("Invalid file or library '%s'", path)
 }
 
-func mapToSlice[T any](m *orderedmap.OrderedMap[Cell, *Cell]) []T {
+func mapToSlice[T any](m *Map) []T {
 	slice := make([]T, m.Len())
 
 	var t T
@@ -319,7 +462,7 @@ func mapToSlice[T any](m *orderedmap.OrderedMap[Cell, *Cell]) []T {
 	return slice
 }
 
-func mapToSliceAny(m *orderedmap.OrderedMap[Cell, *Cell]) []any {
+func mapToSliceAny(m *Map) []any {
 	slice := make([]any, m.Len())
 
 	i := 0
@@ -330,12 +473,6 @@ func mapToSliceAny(m *orderedmap.OrderedMap[Cell, *Cell]) []any {
 
 	return slice
 }
-
-/*func migrateMapToMap(src, dest *orderedmap.OrderedMap[Cell, *Cell]) {
-	for k, v := range src.AllFromFront() {
-		dest.Set(k, v)
-	}
-}*/
 
 func getInterfaceType(v any) string {
 	typeSM := typeName.FindAllStringSubmatch(reflect.ValueOf(v).String(), -1)
@@ -754,7 +891,7 @@ func (s *StructObject) Layout() []FieldLayout {
 				size = last.Offset + last.Size
 
 				align, typ = 8, "instance"
-			case unsafe.Pointer, uintptr, ValuePtr:
+			case unsafe.Pointer, uintptr:
 				size, align, typ = 8, 8, "ptr"
 			case int64:
 				size, align, typ = 8, 8, "int64"
@@ -968,7 +1105,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 			}
 
 			switch table := table.(type) {
-			case *orderedmap.OrderedMap[Cell, *Cell], string:
+			case *Map, string:
 				cell := inter.GetTableCellByKeys(table, keys, srcNode, 0)
 
 				return cell.Ptr
@@ -977,28 +1114,6 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 			}
 		case *GetFieldNode:
 			cell := inter.GetInstanceFieldCell(srcNode)
-			/*structObjNode, fieldNodes := inter.GetStructAndFieldNames(srcNode, []Node{})
-			if structObjNode == nil {
-				throw("Attempt to get field of nothing.", node.X, node.Y)
-			}
-
-			structObj, ok := inter.GetNodeValue(structObjNode).(*StructObject)
-			if !ok {
-				throw("Attempt to get field of a non-structure value.", structObjNode.Position(), structObjNode.Line())
-			}
-
-			fields := []string{}
-			for _, fieldNode := range fieldNodes {
-
-				fieldIdentNode, ok := fieldNode.(*IdentNode)
-				if !ok {
-					throw("Field name must be an identifier", fieldNode.Position(), fieldNode.Line())
-				}
-
-				fields = append(fields, fieldIdentNode.Value)
-			}
-
-			return inter.GetFieldValueByNames(structObj, fields, srcNode, 0)*/
 
 			return cell.Ptr
 		}
@@ -1043,7 +1158,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 		}
 
 		switch table := table.(type) {
-		case *orderedmap.OrderedMap[Cell, *Cell], string:
+		case *Map, string:
 			return inter.GetTableValueByKeys(table, keys, node, 0)
 		default:
 			throw("Cannot index non-table or non-string value.", node.X, node.Y)
@@ -1090,7 +1205,7 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 	}
 
 	switch table := table.(type) {
-	case *orderedmap.OrderedMap[Cell, *Cell]:
+	case *Map:
 		elem := table.GetElement(CL(key)).Value
 		var val any
 		if elem != nil {
@@ -1129,7 +1244,7 @@ func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *Ge
 	key := keys[index]
 
 	switch table := table.(type) {
-	case *orderedmap.OrderedMap[Cell, *Cell]:
+	case *Map:
 		elem := table.GetElement(CL(key)).Value
 		var val *Cell
 		if elem != nil {
@@ -1230,7 +1345,7 @@ func (inter *Interpreter) GetInstanceFieldCell(getFieldNode *GetFieldNode) *Cell
 	return inter.GetFieldCellByNames(structObj, fields, getFieldNode, 0)
 }
 
-func (inter *Interpreter) GetMap(node *MapNode) *orderedmap.OrderedMap[Cell, *Cell] {
+func (inter *Interpreter) GetMap(node *MapNode) *Map {
 	m := orderedmap.NewOrderedMap[Cell, *Cell]()
 
 	for _, element := range node.Map {
@@ -1250,7 +1365,10 @@ func (inter *Interpreter) GetMap(node *MapNode) *orderedmap.OrderedMap[Cell, *Ce
 		}
 	}
 
-	return m
+	fmap := &Map{m, []any{}, []string{}, []byte{}}
+	fmap.ToMemory()
+
+	return fmap
 }
 
 func (inter *Interpreter) Current(scope *Scope) {
@@ -1346,7 +1464,7 @@ func (inter *Interpreter) CompeleteBody(body []Node, isFunc, isLoop bool, addToS
 	return false, false, nil
 }
 
-func (inter *Interpreter) SetTableElementValue(table *orderedmap.OrderedMap[Cell, *Cell], keys []any, value any, index int) {
+func (inter *Interpreter) SetTableElementValue(table *Map, keys []any, value any, index int) {
 	if index >= len(keys) {
 		return
 	}
@@ -1355,7 +1473,7 @@ func (inter *Interpreter) SetTableElementValue(table *orderedmap.OrderedMap[Cell
 
 	elem := table.GetElement(CL(key))
 	switch elem := elem.Value.Get().(type) {
-	case *orderedmap.OrderedMap[Cell, *Cell]:
+	case *Map:
 		if index+1 >= len(keys) {
 			table.Set(CL(key), CLPTR(value))
 			break
@@ -1420,7 +1538,7 @@ func (inter *Interpreter) SetElementValue(node *SetElem) {
 	value := inter.GetNodeValueS(node.Value, node.X, node.Y)
 
 	switch table := table.(type) {
-	case *orderedmap.OrderedMap[Cell, *Cell]:
+	case *Map:
 		inter.SetTableElementValue(table, keys, value, 0)
 	default:
 		throw("Cannot index non-table value", node.X, node.Y)
@@ -1717,7 +1835,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		keyIdent, valueIdent := node.KeyIdent, node.ValueIdent
 
 		switch cycleValue := cycleValue.(type) {
-		case *orderedmap.OrderedMap[Cell, *Cell]:
+		case *Map:
 			for key, value := range cycleValue.AllFromFront() {
 				end, skip, returnValue := inter.CompeleteBody(node.Body, false, true, [2]any{keyIdent.Value, key}, [2]any{valueIdent.Value, value})
 

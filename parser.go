@@ -790,13 +790,17 @@ MAPPAR:
 
 		switch token.Type {
 		case tableKeyValueAssignTokenType:
+			if len(currentValue) > 0 {
+				throw(ELEMENT_COMMA_EXPECTED, token.Position, token.Line)
+			}
+
 			parser.Unexpect(tableSeparatorTokenType, "closesqbrac")
 			parser.Next()
 			currentValue = parser.ParseValue()
 
 			currenToken := parser.CurrentToken
 			if currenToken.Type != tableSeparatorTokenType {
-				throw("Expected comma after element value", currenToken.Position, currenToken.Line)
+				throw(ELEMENT_COMMA_EXPECTED, currenToken.Position, currenToken.Line)
 			}
 		case tableSeparatorTokenType:
 			if len(currentKey) > 1 || len(currentKey) == 0 {
@@ -811,6 +815,8 @@ MAPPAR:
 				Value: currentValue,
 			})
 			currentKey = []Node{}
+			currentValue = []Node{}
+
 			parser.Unexpect(tableKeyValueAssignTokenType)
 			parser.Next()
 
@@ -827,11 +833,19 @@ MAPPAR:
 
 			switch token.Type {
 			case tableSeparatorTokenType:
+				if len(currentValue) > 0 {
+					throw(ELEMENT_COMMA_EXPECTED, token.Position, token.Line)
+				}
+
 				currentValue = currentKey
 				currentKey = []Node{newDataTypeNode(Token{
 					Value: elementCount,
 					Type:  "int",
 				})}
+			case tableKeyValueAssignTokenType:
+				break
+			default:
+				throw("Invalid element separator or value assign token type after the key.", token.Position, token.Line)
 			}
 		}
 	}
