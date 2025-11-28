@@ -826,6 +826,16 @@ MAPPAR:
 			parser.Next()
 		case "closesqbrac":
 			parser.Next()
+			token = parser.CurrentToken
+
+			if token.Type == "tableelembits" {
+				parser.Next("int")
+
+				mapNode.Bits = newDataTypeNode(parser.CurrentToken).(*IntNode)
+
+				parser.Next()
+			}
+
 			break MAPPAR
 		default:
 			currentKey = parser.ParseValue()

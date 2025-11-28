@@ -198,6 +198,7 @@ func (elem *Element) Line() int {
 
 type MapNode struct {
 	Map  []*Element
+	Bits *IntNode
 	X, Y int
 }
 

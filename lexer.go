@@ -31,7 +31,8 @@ var (
 		"new":      "newstruct",
 		"struct":   "struct",
 
-		"#bits": "valbitcount",
+		"#bits":  "valbitcount",
+		"<-": "tableelembits",
 
 		boolTrue:  "bool",
 		boolFalse: "bool",

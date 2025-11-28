@@ -2,8 +2,7 @@
 
 #include <stdio.h>
 
-__declspec(dllexport) int Sigma(int* a)
+__declspec(dllexport) void Sigma(short* a)
 {   
-   a[0] = 10;
-   return 0;
+   a[1] = 32000;
 }

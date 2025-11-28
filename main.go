@@ -10,6 +10,7 @@ import (
 )
 import (
 	"runtime"
+	"strconv"
 	"unsafe"
 )
 
@@ -56,6 +57,19 @@ func argsCheck(v []any, min, max int, expectedDataTypes ...string) {
 			}
 		}
 	}
+}
+
+func numtostr(v any) string {
+	var s string
+
+	switch v := v.(type) {
+	case int64:
+		return strconv.FormatInt(v, 10)
+	case float64:
+		return strconv.FormatFloat(v, 'f', 32, 64)
+	}
+
+	return s
 }
 
 func numberToFloat64(n any) (float64, bool) {

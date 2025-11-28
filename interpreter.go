@@ -91,6 +91,8 @@ func (cell *Cell) Set(value any) {
 		cell.TableValue = value
 		cell.DataType = "table"
 
+		value.ToMemory()
+
 		cell.Ptr = unsafe.Pointer(value.Address())
 	case unsafe.Pointer:
 		cell.PtrValue = uintptr(value)
@@ -167,6 +169,7 @@ func checkType[T any](v any) bool {
 type Map struct {
 	*orderedmap.OrderedMap[Cell, *Cell]
 
+	Bits     int8
 	Pointers []any
 	Layout   []string
 	Mem      []byte
@@ -174,6 +177,7 @@ type Map struct {
 
 func anyToBytes(v []any, m *Map) []byte {
 	buf := new(bytes.Buffer)
+	fmt.Println("SIGMA TRIGGER", v)
 
 	m.Layout = []string{}
 	m.Pointers = []any{}
@@ -181,12 +185,34 @@ func anyToBytes(v []any, m *Map) []byte {
 	for _, x := range v {
 		switch t := x.(type) {
 		case int64:
-			m.Layout = append(m.Layout, "int")
+			layout := "int"
+			if m.Bits != 0 {
+				layout += numtostr(int64(m.Bits))
+
+				m.Layout = append(m.Layout, layout)
+				m.Pointers = append(m.Pointers, nil)
+
+				binary.Write(buf, binary.LittleEndian, toInt(t, int(m.Bits)))
+				break
+			}
+
+			m.Layout = append(m.Layout, layout)
 			m.Pointers = append(m.Pointers, nil)
 
 			binary.Write(buf, binary.LittleEndian, t)
 		case float64:
-			m.Layout = append(m.Layout, "float")
+			layout := "float"
+			if m.Bits != 0 {
+				layout = "int" + numtostr(m.Bits)
+
+				m.Layout = append(m.Layout, layout)
+				m.Pointers = append(m.Pointers, nil)
+
+				binary.Write(buf, binary.LittleEndian, ftoInt(t, int(m.Bits)))
+				break
+			}
+
+			m.Layout = append(m.Layout, layout)
 			m.Pointers = append(m.Pointers, nil)
 
 			binary.Write(buf, binary.LittleEndian, t)
@@ -251,12 +277,27 @@ func bytesToAny(mem []byte, layout []string, pointers []any) []any {
 
 			m.Mem = b
 			res = append(res, m)
-		case "int":
+		case "int", "int64":
 			var v int64
 			binary.Read(r, binary.LittleEndian, &v)
 
 			res = append(res, v)
-		case "ptr":
+		case "int32":
+			var v int32
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res = append(res, int64(v))
+		case "int16":
+			var v int16
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res = append(res, int64(v))
+		case "int8":
+			var v int8
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res = append(res, int64(v))
+		case "ptr", "uint64":
 			var v uint64
 			binary.Read(r, binary.LittleEndian, &v)
 
@@ -312,6 +353,10 @@ func (m *Map) FromMemory() {
 }
 
 func (m *Map) Address() uintptr {
+	if len(m.Mem) == 0 {
+		return 0
+	}
+
 	return uintptr(unsafe.Pointer(&m.Mem[0]))
 }
 
@@ -515,6 +560,10 @@ func (scope *Scope) Add(key, value any) (success bool) {
 			fcell := field.Value
 
 			scope.Pointers[fcell.Ptr] = fcell
+		}
+	case *Map:
+		for _, vcell := range value.AllFromFront() {
+			scope.Pointers[vcell.Ptr] = vcell
 		}
 	}
 
@@ -798,6 +847,40 @@ func (s *StructObject) Address() uintptr {
 		return 0
 	}
 	return uintptr(unsafe.Pointer(&s.LastMem[0]))
+}
+
+func toInt(v int64, bits int) any {
+	switch bits {
+	case 8:
+		return int8(v)
+	case 16:
+		return int16(v)
+	case 32:
+		return int32(v)
+	case 64:
+		return int64(v)
+	case 0:
+		return v
+	default:
+		panic("invalid bit size")
+	}
+}
+
+func ftoInt(v float64, bits int) any {
+	switch bits {
+	case 8:
+		return int8(v)
+	case 16:
+		return int16(v)
+	case 32:
+		return int32(v)
+	case 64:
+		return int64(v)
+	case 0:
+		return v
+	default:
+		panic("invalid bit size")
+	}
 }
 
 func toInt64(v any) int64 {
@@ -1370,7 +1453,12 @@ func (inter *Interpreter) GetMap(node *MapNode) *Map {
 		}
 	}
 
-	fmap := &Map{m, []any{}, []string{}, []byte{}}
+	b := int8(0)
+	if node.Bits != nil {
+		b = int8(node.Bits.Value)
+	}
+
+	fmap := &Map{m, b, []any{}, []string{}, []byte{}}
 	fmap.ToMemory()
 
 	return fmap
