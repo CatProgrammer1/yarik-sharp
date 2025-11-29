@@ -814,6 +814,7 @@ MAPPAR:
 				Key:   currentKey,
 				Value: currentValue,
 			})
+
 			currentKey = []Node{}
 			currentValue = []Node{}
 
@@ -829,11 +830,9 @@ MAPPAR:
 			token = parser.CurrentToken
 
 			if token.Type == "tableelembits" {
-				parser.Next("int")
-
-				mapNode.Bits = newDataTypeNode(parser.CurrentToken).(*IntNode)
-
 				parser.Next()
+
+				mapNode.Bits = parser.ParseValue()
 			}
 
 			break MAPPAR

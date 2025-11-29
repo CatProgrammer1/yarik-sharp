@@ -81,7 +81,7 @@ var (
 
 			a := v[0]
 			switch a := a.(type) {
-			case *orderedmap.OrderedMap[any, any]:
+			case *Map:
 				return []any{int64(a.Len())}
 			case string:
 				return []any{int64(len(a))}
@@ -146,8 +146,19 @@ var (
 			v = v[BUILTIN_SPECIALS:]
 
 			b := v[0].(*Map)
+			bstring := []byte{}
 
-			return []any{string(mapToSlice[byte](b))}
+		APPEND:
+			for _, v := range b.AllFromFront() {
+				switch v := v.Get().(type) {
+				case int64:
+					bstring = append(bstring, byte(v))
+				default:
+					break APPEND
+				}
+			}
+
+			return []any{string(bstring)}
 		},
 
 		"unicodetostr": func(v ...any) []any {

@@ -42,31 +42,30 @@ type Cell struct {
 	DataType string // int, float, string, bool, struct, instance, table, ptr, func, error, "valueptr"
 	Ptr      unsafe.Pointer
 	TempBuf  any
-	Pinner   *runtime.Pinner
 
 	Scope *Scope
 }
 
-func (cell *Cell) Set(value any) {
-	if cell.Pinner == nil {
-		cell.Pinner = new(runtime.Pinner)
-	} else {
-		cell.Pinner.Unpin()
-	}
-
+func (cell *Cell) Set(value any, nonptr bool) {
 	switch value := value.(type) {
 	case int64:
 		cell.IntValue = value
 		cell.DataType = "int"
-		cell.Ptr = unsafe.Pointer(&cell.IntValue)
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.IntValue)
+		}
 	case float64:
 		cell.FloatValue = value
 		cell.DataType = "float"
-		cell.Ptr = unsafe.Pointer(&cell.FloatValue)
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.FloatValue)
+		}
 	case bool:
 		cell.BoolValue = value
 		cell.DataType = "bool"
-		cell.Ptr = unsafe.Pointer(&cell.BoolValue)
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.BoolValue)
+		}
 	case string:
 		cell.StringValue = value
 		cell.DataType = "string"
@@ -74,43 +73,66 @@ func (cell *Cell) Set(value any) {
 		ptr, buf := valueToPtr(cell.StringValue, 0, 0)
 		cell.TempBuf = buf
 
-		cell.Ptr = unsafe.Pointer(ptr)
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(ptr)
+		}
 	case *StructObject:
 		cell.InstanceValue = value
 		cell.DataType = "instance"
-		cell.Ptr = unsafe.Pointer(value.Address())
+
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(value.Address())
+		}
 	case *Structure:
 		cell.StructValue = value
 		cell.DataType = "struct"
-		cell.Ptr = unsafe.Pointer(value)
+
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(value)
+		}
 	case *FuncDec:
 		cell.FuncValue = value
 		cell.DataType = "func"
-		cell.Ptr = unsafe.Pointer(value)
+
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(value)
+		}
 	case *Map:
 		cell.TableValue = value
 		cell.DataType = "table"
 
 		value.ToMemory()
 
-		cell.Ptr = unsafe.Pointer(value.Address())
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(value.Address())
+		}
 	case unsafe.Pointer:
 		cell.PtrValue = uintptr(value)
 		cell.DataType = "ptr"
-		cell.Ptr = unsafe.Pointer(&cell.PtrValue)
+
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.PtrValue)
+		}
 	case uintptr:
 		cell.PtrValue = value
 		cell.DataType = "ptr"
-		cell.Ptr = unsafe.Pointer(&cell.PtrValue)
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.PtrValue)
+		}
 	case error:
 		cell.ErrorValue = value
 		cell.DataType = "error"
-		cell.Ptr = unsafe.Pointer(&cell.ErrorValue)
+
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.ErrorValue)
+		}
+	case nil:
+		cell.DataType = "nil"
+		cell.Ptr = nil
 	default:
 		fmt.Printf("%T\n", value)
 		panic("Unsupported type in Cell.Set")
 	}
-	cell.Pinner.Pin(cell.Ptr)
 }
 
 func (cell *Cell) Get() any {
@@ -135,6 +157,8 @@ func (cell *Cell) Get() any {
 		return cell.FuncValue
 	case "error":
 		return cell.ErrorValue
+	case "nil":
+		return nil
 	default:
 		fmt.Println(cell.DataType)
 		panic("Unsupported type in Cell.Get")
@@ -148,7 +172,7 @@ func (cell *Cell) GetAddress() unsafe.Pointer {
 func CLPTR(v any) *Cell {
 	cell := &Cell{}
 
-	cell.Set(v)
+	cell.Set(v, false)
 
 	return cell
 }
@@ -156,7 +180,7 @@ func CLPTR(v any) *Cell {
 func CL(v any) Cell {
 	cell := Cell{}
 
-	cell.Set(v)
+	cell.Set(v, true)
 
 	return cell
 }
@@ -167,7 +191,7 @@ func checkType[T any](v any) bool {
 }
 
 type Map struct {
-	*orderedmap.OrderedMap[Cell, *Cell]
+	*orderedmap.OrderedMap[any, *Cell]
 
 	Bits     int8
 	Pointers []any
@@ -177,7 +201,6 @@ type Map struct {
 
 func anyToBytes(v []any, m *Map) []byte {
 	buf := new(bytes.Buffer)
-	fmt.Println("SIGMA TRIGGER", v)
 
 	m.Layout = []string{}
 	m.Pointers = []any{}
@@ -185,9 +208,13 @@ func anyToBytes(v []any, m *Map) []byte {
 	for _, x := range v {
 		switch t := x.(type) {
 		case int64:
+			prefix := "u"
 			layout := "int"
 			if m.Bits != 0 {
-				layout += numtostr(int64(m.Bits))
+				if m.Bits < 0 {
+					prefix = ""
+				}
+				layout = prefix + layout + numtostr(int64(math.Abs(float64(m.Bits))))
 
 				m.Layout = append(m.Layout, layout)
 				m.Pointers = append(m.Pointers, nil)
@@ -247,7 +274,14 @@ func anyToBytes(v []any, m *Map) []byte {
 
 			binary.Write(buf, binary.LittleEndian, uint32(len(t.Mem)))
 			buf.Write(t.Mem)
+		case *StructObject:
+			m.Layout = append(m.Layout, "instance")
+			m.Pointers = append(m.Pointers, t)
+
+			binary.Write(buf, binary.LittleEndian, uint32(len(t.LastMem)))
+			buf.Write(t.LastMem)
 		default:
+			fmt.Printf("%T\n", t)
 			panic("Unsupported type")
 		}
 	}
@@ -297,11 +331,33 @@ func bytesToAny(mem []byte, layout []string, pointers []any) []any {
 			binary.Read(r, binary.LittleEndian, &v)
 
 			res = append(res, int64(v))
+		//Unsigned!
+		case "uint":
+			var v uint64
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res = append(res, int64(v))
+		case "uint32":
+			var v uint32
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res = append(res, int64(v))
+		case "uint16":
+			var v uint16
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res = append(res, int64(v))
+		case "uint8":
+			var v uint8
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res = append(res, int64(v))
 		case "ptr", "uint64":
 			var v uint64
 			binary.Read(r, binary.LittleEndian, &v)
 
 			res = append(res, uintptr(v))
+		//Unsigned end!
 		case "float":
 			var v float64
 			binary.Read(r, binary.LittleEndian, &v)
@@ -339,7 +395,12 @@ func bytesToAny(mem []byte, layout []string, pointers []any) []any {
 }
 
 func (m *Map) ToMemory() {
-	m.Mem = anyToBytes(mapToSliceAny(m), m)
+	arrayBytes := anyToBytes(mapToSliceAny(m), m)
+	if len(arrayBytes) > len(m.Mem) {
+		m.Mem = arrayBytes
+	} else {
+		copy(m.Mem, arrayBytes)
+	}
 }
 
 func (m *Map) FromMemory() {
@@ -347,7 +408,7 @@ func (m *Map) FromMemory() {
 
 	i := 0
 	for _, value := range m.AllFromFront() {
-		value.Set(s[i])
+		value.Set(s[i], false)
 		i++
 	}
 }
@@ -393,7 +454,7 @@ func format(v ...any) string {
 					elementSuffix = " "
 				}
 
-				elements += fmt.Sprintf(elemFormat+elementSuffix, format(k.Get()), format(v.Get()))
+				elements += fmt.Sprintf(elemFormat+elementSuffix, format(k), format(v.Get()))
 				i++
 			}
 
@@ -474,7 +535,7 @@ func importModule(path string, mainScope *Scope) {
 
 		for k, v := range moduleData {
 			cell := &Cell{}
-			cell.Set(v.Get())
+			cell.Set(v.Get(), false)
 
 			mainScope.Data[k] = cell
 			mainScope.Pointers[cell.Ptr] = cell
@@ -550,7 +611,7 @@ func (scope *Scope) Add(key, value any) (success bool) {
 		return false
 	}
 	cell := &Cell{}
-	cell.Set(value)
+	cell.Set(value, false)
 
 	scope.Data[key] = cell
 	scope.Pointers[cell.Ptr] = cell
@@ -584,7 +645,7 @@ func (scope *Scope) Set(key, value any, x, y int) (success bool) {
 		if cell.Ptr != nil {
 			delete(scope.Pointers, cell.Ptr)
 		}
-		cell.Set(value)
+		cell.Set(value, false)
 
 		return true
 	} else if scope.Parent != nil {
@@ -852,12 +913,20 @@ func (s *StructObject) Address() uintptr {
 func toInt(v int64, bits int) any {
 	switch bits {
 	case 8:
-		return int8(v)
+		return uint8(v)
 	case 16:
-		return int16(v)
+		return uint16(v)
 	case 32:
-		return int32(v)
+		return uint32(v)
 	case 64:
+		return uint64(v)
+	case -8:
+		return int8(v)
+	case -16:
+		return int16(v)
+	case -32:
+		return int32(v)
+	case -64:
 		return int64(v)
 	case 0:
 		return v
@@ -1052,7 +1121,7 @@ func (structObj *StructObject) Set(fieldName string, value any) bool {
 			throw("Cannot assign value to a instance's method.", method.X, method.Y)
 		}
 		if field.Identifier == fieldName {
-			cell.Set(value)
+			cell.Set(value, false)
 
 			return true
 		}
@@ -1178,6 +1247,11 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 				throw("Attempt to get pointer of nil value.", node.X, node.Y)
 			}
 
+			switch v := cell.Get().(type) {
+			case *FuncDec, *Structure:
+				throw("Cannot get a pointer of %s value", node.X, node.Y, getValueType(v))
+			}
+
 			return uintptr(cell.Ptr)
 		case *GetElementNode:
 			tableNode, keyNodes := inter.GetTableAndKeys(srcNode, []Node{})
@@ -1294,10 +1368,18 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 
 	switch table := table.(type) {
 	case *Map:
-		elem := table.GetElement(CL(key)).Value
+		if !table.Has(key) {
+			if index+1 < len(keys) {
+				throw("Attempt to index non-table value.", getElemN.X, getElemN.Y)
+			} else {
+				return CLPTR(nil).Get()
+			}
+		}
+
+		elem := table.GetElement(key)
 		var val any
 		if elem != nil {
-			val = elem.Get()
+			val = elem.Value.Get()
 		}
 
 		if index+1 < len(keys) {
@@ -1333,10 +1415,18 @@ func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *Ge
 
 	switch table := table.(type) {
 	case *Map:
-		elem := table.GetElement(CL(key)).Value
+		if !table.Has(key) {
+			if index+1 < len(keys) {
+				throw("Attempt to index non-table value.", getElemN.X, getElemN.Y)
+			} else {
+				return CLPTR(nil)
+			}
+		}
+
+		elem := table.GetElement(key)
 		var val *Cell
 		if elem != nil {
-			val = elem
+			val = elem.Value
 		}
 
 		if index+1 < len(keys) {
@@ -1434,7 +1524,7 @@ func (inter *Interpreter) GetInstanceFieldCell(getFieldNode *GetFieldNode) *Cell
 }
 
 func (inter *Interpreter) GetMap(node *MapNode) *Map {
-	m := orderedmap.NewOrderedMap[Cell, *Cell]()
+	m := orderedmap.NewOrderedMap[any, *Cell]()
 
 	for _, element := range node.Map {
 		key, value := inter.GetNodeValueS(element.Key, element.X, element.Y), inter.GetNodeValueS(element.Value, element.X, element.Y)
@@ -1447,15 +1537,20 @@ func (inter *Interpreter) GetMap(node *MapNode) *Map {
 				throw("Cannot assign a field cannot be an empty value.", element.X, element.Y)
 			}
 
-			m.Set(CL(key), CLPTR(values[0]))
+			m.Set(key, CLPTR(values[0]))
 		} else {
-			m.Set(CL(key), CLPTR(value))
+			m.Set(key, CLPTR(value))
 		}
 	}
 
 	b := int8(0)
 	if node.Bits != nil {
-		b = int8(node.Bits.Value)
+		bits, ok := inter.GetNodeValueS(node.Bits, node.X, node.Y).(int64)
+		if !ok {
+			throw("Bits amount must be an integer value.", node.X, node.Y)
+		}
+
+		b = int8(bits)
 	}
 
 	fmap := &Map{m, b, []any{}, []string{}, []byte{}}
@@ -1564,17 +1659,22 @@ func (inter *Interpreter) SetTableElementValue(table *Map, keys []any, value any
 
 	key := keys[index]
 
-	elem := table.GetElement(CL(key))
-	switch elem := elem.Value.Get().(type) {
-	case *Map:
-		if index+1 >= len(keys) {
-			table.Set(CL(key), CLPTR(value))
-			break
+	elem := table.GetElement(key)
+	if elem != nil {
+		switch elem := elem.Value.Get().(type) {
+		case *Map:
+			if index+1 >= len(keys) {
+				table.Set(key, CLPTR(value))
+
+				elem.ToMemory()
+				break
+			}
+			inter.SetTableElementValue(elem, keys, value, index+1)
+			return
 		}
-		inter.SetTableElementValue(elem, keys, value, index+1)
-	default:
-		table.Set(CL(key), CLPTR(value))
 	}
+	table.Set(key, CLPTR(value))
+	table.ToMemory()
 }
 
 func (inter *Interpreter) SetInstanceFieldValue(instance *StructObject, fields []string, value any, index int) {
@@ -1707,7 +1807,7 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		fieldDecl.Func.Self = structObject
 
 		cell := &Cell{}
-		cell.Set(fieldDecl.Func)
+		cell.Set(fieldDecl.Func, false)
 
 		fields = append(fields, &Field{
 			Identifier: fieldDecl.Identifier,
@@ -1737,9 +1837,9 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 				throw("Cannot assign a field cannot be an empty value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
 			}
 
-			cell.Set(v[0])
+			cell.Set(v[0], false)
 		default:
-			cell.Set(v)
+			cell.Set(v, false)
 		}
 
 		bits := originalStructure.Fields[i].Bits
@@ -1850,7 +1950,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 
 		newValue := inter.GetNodeValueS(node.Value, node.X, node.Y)
 
-		cellOfPtr.Set(newValue)
+		cellOfPtr.Set(newValue, false)
 	case *FuncCall:
 		inter.GetNodeValue(node)
 	case *SetElem:
