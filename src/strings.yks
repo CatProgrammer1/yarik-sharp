@@ -1,0 +1,75 @@
+import "tables"
+
+func cut(str, i, j) {
+	if gettype(str) != "string" {
+		throw("String argument must be a string value")
+	}
+
+	if i > j {
+		return ""
+	}
+	if len(str) <= j {
+		throw("Attempt to cut more characters than string has")
+	}
+
+	yar cutStr = ""
+	while i <= j {
+		cutStr = cutStr + str[i]
+
+		i = i + 1
+	}
+
+	return cutStr
+}
+
+func hasPrefix(str, prefix) {
+	if len(prefix) > len(str) {
+		return false
+	}
+
+	yar prefixCut = cut(str, 0, len(prefix)-1)
+	
+	return prefixCut == prefix
+}
+
+func hasSuffix(str, suffix) {
+	if len(suffix) > len(str) {
+		return false
+	}
+
+	yar suffixCut = cut(str, len(str)-len(suffix), len(str)-1)
+	
+	return suffixCut == suffix
+}
+
+func split(str, separator) {
+	if gettype(str) != "string" {
+		throw("String argument must be a string value")
+	}else if gettype(separator) != "string" {
+		throw("Separator argument must be a string value")
+	}
+
+	yar separated = []
+	yar savedStr = ""
+
+	yar i = 0
+	while i < len(str) {
+		yar char = str[i]
+		if char == separator {
+			if len(savedStr) > 0 {
+				append(separated, savedStr)
+				savedStr = ""
+			}
+			i = i + 1
+			continue
+		}
+
+		savedStr = savedStr + char
+		i = i + 1
+	}
+	if len(savedStr) > 0 {
+		append(separated, savedStr)
+	}
+
+	return separated
+}
