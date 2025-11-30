@@ -654,14 +654,14 @@ func (scope *Scope) Set(key, value any, x, y int) (success bool) {
 	return false
 }
 
-func (scope *Scope) Get(key any) any {
+func (scope *Scope) Get(key any) (any, bool) {
 	v, ok := scope.Data[key]
 	if ok {
-		return v.Get()
+		return v.Get(), true
 	} else if scope.Parent != nil {
 		return scope.Parent.Get(key)
 	}
-	return nil
+	return nil, false
 }
 
 func (scope *Scope) GetWithAddress(ptr unsafe.Pointer) any {
@@ -1222,7 +1222,10 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 	case *FuncCall:
 		return inter.CallFunction(node)
 	case *IdentNode:
-		v := inter.CurrentScope.Get(node.Value)
+		v, found := inter.CurrentScope.Get(node.Value)
+		if !found {
+			throw("Variable '%s' doesn't exist", node.X, node.Y, node.Value)
+		}
 
 		return v
 	case *StructNode:
@@ -1725,7 +1728,18 @@ func (inter *Interpreter) SetElementValue(node *SetElem) {
 	table := inter.GetNodeValue(tableNode)
 	keys := []any{}
 	for _, keyNode := range keyNodes {
-		keys = append(keys, inter.GetNodeValue(keyNode))
+		key := inter.GetNodeValue(keyNode)
+		if cookedValues, ok := key.([]any); ok {
+			if len(cookedValues) > 1 {
+				throw("Element's key cannot have more than one value.", tableNode.Position(), tableNode.Line())
+			} else if len(cookedValues) == 0 {
+				throw("Cannot assign an element's key an empty value.", tableNode.Position(), tableNode.Line())
+			}
+
+			key = cookedValues[0]
+		}
+
+		keys = append(keys, key)
 	}
 
 	value := inter.GetNodeValueS(node.Value, node.X, node.Y)
@@ -1789,7 +1803,12 @@ func (inter *Interpreter) DeclareStructure(structDecl *StructDeclNode) {
 func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObject {
 	identifier := structObjNode.Identifier.Value
 
-	originalStructure, ok := inter.CurrentScope.Get(identifier).(*Structure)
+	originalStructureAny, found := inter.CurrentScope.Get(identifier)
+	if !found {
+		throw("Attempt to make an instance of structure '%s' that doesn't exist", structObjNode.X, structObjNode.Y, structObjNode.Identifier.Value)
+	}
+
+	originalStructure, ok := originalStructureAny.(*Structure)
 	if originalStructure == nil || !ok {
 		throw("Attempt to make an instance of a nonexistent structure '%s'.", structObjNode.X, structObjNode.Y, identifier)
 	}
@@ -1834,7 +1853,7 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 			if len(v) > 1 {
 				throw("Field cannot have more than one value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
 			} else if len(v) == 0 {
-				throw("Cannot assign a field cannot be an empty value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
+				throw("Cannot assign a field an empty value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
 			}
 
 			cell.Set(v[0], false)

@@ -1,8 +1,7 @@
 func make(lenght, defaultVal, bits) {
     if gettype(lenght) != "int" {
         throw("Lenght argument must be an integer")
-    }
-    if gettype(bits) != "int" {
+    }else if gettype(bits) != "int" {
         throw("Bits argument must be an integer")
     }
 
@@ -18,14 +17,21 @@ func make(lenght, defaultVal, bits) {
 }
 
 func write(buf, data) {
-    if gettype(buf) != "buf" {
+    if gettype(buf) != "table" {
         throw("Buffer argument must be a table")
-    }
-    if gettype(bits) != "int" {
+    }else if gettype(bits) != "int" {
         throw("Data argument must be a table")
     }
 
     foreach i, v = data {
         buf[i] = v
     }
+}
+
+func append(table, elem) {
+    if gettype(table) != "table" {
+        throw("Table argument must be a table")
+    }
+
+    table[len(table)] = elem
 }

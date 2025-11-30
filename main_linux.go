@@ -1,16 +1,13 @@
 package main
 
 import (
-	"C"
 	"fmt"
 	"math"
 	"os"
 	"path/filepath"
-	"strings"
-)
-import (
 	"runtime"
 	"strconv"
+	"strings"
 	"unsafe"
 )
 
