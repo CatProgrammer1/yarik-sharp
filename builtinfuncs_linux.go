@@ -169,23 +169,23 @@ var (
 			return []any{string(r)}
 		},
 
-		"syscallnt": func(v ...any) []any {
-			argsCheck(v, 2, 2, "string", "table")
+		"syscall": func(v ...any) []any {
+			argsCheck(v, 4, 4, "ptr", "any", "any", "any")
 
 			x, y := v[0].(int), v[1].(int)
 			inter := v[2].(*Interpreter)
 
 			v = v[BUILTIN_SPECIALS:]
 
-			procName := v[0].(string)
-			paramsMap := v[1].(*Map)
+			trap, _ := valueToPtr(v[0], x, y)
 
-			params := make([]uintptr, paramsMap.Len())
-			buffers := make([]any, paramsMap.Len())
-			i := 0
+			paramsAny := append([]any{}, v[1:]...)
 
-			for _, v := range paramsMap.AllFromFront() {
-				ptr, buf := valueToPtr(v.Get(), x, y)
+			params := make([]uintptr, len(paramsAny))
+			buffers := make([]any, len(paramsAny))
+
+			for i, v := range paramsAny {
+				ptr, buf := valueToPtr(v, x, y)
 				if buf != nil {
 					buffers[i] = buf
 				}
@@ -194,15 +194,7 @@ var (
 				i++
 			}
 
-			ntdll := syscall.NewLazyDLL("ntdll.dll")
-			proc := ntdll.NewProc(procName)
-
-			procerr := proc.Find()
-			if procerr != nil {
-				return []any{uintptr(0), uintptr(0), procerr}
-			}
-
-			r1, r2, err := proc.Call(params...)
+			r1, r2, err := syscall.Syscall(trap, params[0], params[1], params[2])
 
 			for _, ptr := range params {
 				value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
@@ -223,24 +215,23 @@ var (
 			return []any{r1, r2, err}
 		},
 
-		"call": func(v ...any) []any {
-			argsCheck(v, 3, 3, "string", "string", "table")
+		"syscall6": func(v ...any) []any {
+			argsCheck(v, 4, 4, "ptr", "any", "any", "any", "any", "any", "any")
 
 			x, y := v[0].(int), v[1].(int)
 			inter := v[2].(*Interpreter)
 
 			v = v[BUILTIN_SPECIALS:]
 
-			dllname := v[0].(string)
-			procName := v[1].(string)
-			paramsMap := v[2].(*Map)
+			trap, _ := valueToPtr(v[0], x, y)
 
-			params := make([]uintptr, paramsMap.Len())
-			buffers := make([]any, paramsMap.Len())
-			i := 0
+			paramsAny := append([]any{}, v[1:]...)
 
-			for _, v := range paramsMap.AllFromFront() {
-				ptr, buf := valueToPtr(v.Get(), x, y)
+			params := make([]uintptr, len(paramsAny))
+			buffers := make([]any, len(paramsAny))
+
+			for i, v := range paramsAny {
+				ptr, buf := valueToPtr(v, x, y)
 				if buf != nil {
 					buffers[i] = buf
 				}
@@ -249,15 +240,7 @@ var (
 				i++
 			}
 
-			ntdll := syscall.NewLazyDLL(dllname)
-			proc := ntdll.NewProc(procName)
-
-			procerr := proc.Find()
-			if procerr != nil {
-				return []any{uintptr(0), uintptr(0), procerr}
-			}
-
-			r1, r2, err := proc.Call(params...)
+			r1, r2, err := syscall.Syscall6(trap, params[0], params[1], params[2], params[3], params[4], params[5])
 
 			for _, ptr := range params {
 				value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
@@ -313,9 +296,9 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 	case []any:
 		return uintptr(unsafe.Pointer(&val[0])), val
 	case string:
-		utf16p, _ := syscall.UTF16FromString(val)
+		bstring := append([]byte(val), 0)
 
-		return uintptr(unsafe.Pointer(&utf16p[0])), utf16p
+		return uintptr(unsafe.Pointer(&bstring[0])), bstring
 	case nil:
 		return 0, nil
 	default:
