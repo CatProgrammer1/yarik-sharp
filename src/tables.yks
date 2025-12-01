@@ -28,6 +28,32 @@ func write(buf, data) {
     }
 }
 
+func findElement(table, elem) {
+    if gettype(table) != "table" {
+        throw("Table argument must be a table")
+    }
+
+    foreach k, v = table {
+        if v == elem {
+            return k
+        }
+    }
+    return void
+}
+
+func concat(a, b) {
+    if gettype(a) != "table" {
+        throw("'a' argument must be a table")
+    } else if gettype(b) != "table" {
+        throw("'b' argument must be a table")
+    }
+
+    foreach k,v = b {
+        a[k] = v
+    }
+    return a
+}
+
 func append(table, elem) {
     if gettype(table) != "table" {
         throw("Table argument must be a table")

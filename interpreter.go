@@ -405,7 +405,7 @@ func (m *Map) ToMemory() {
 
 func (m *Map) FromMemory() {
 	s := bytesToAny(m.Mem, m.Layout, m.Pointers)
-
+	//ASDDADS
 	i := 0
 	for _, value := range m.AllFromFront() {
 		value.Set(s[i], false)
@@ -1630,7 +1630,10 @@ func (inter *Interpreter) CompeleteBody(body []Node, isFunc, isLoop bool, addToS
 	defer inter.Current(scope.Parent)
 
 	for _, addToScopeElem := range addToScope {
-		scope.Add(addToScopeElem[0], addToScopeElem[1])
+		ident := addToScopeElem[0].(string)
+		value := addToScopeElem[1]
+
+		scope.Add(ident, value)
 	}
 
 	for _, node := range body {
@@ -2049,7 +2052,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		switch cycleValue := cycleValue.(type) {
 		case *Map:
 			for key, value := range cycleValue.AllFromFront() {
-				end, skip, returnValue := inter.CompeleteBody(node.Body, false, true, [2]any{keyIdent.Value, key}, [2]any{valueIdent.Value, value})
+				end, skip, returnValue := inter.CompeleteBody(node.Body, false, true, [2]any{keyIdent.Value, key}, [2]any{valueIdent.Value, value.Get()})
 
 				if skip {
 					continue

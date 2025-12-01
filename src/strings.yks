@@ -73,3 +73,28 @@ func split(str, separator) {
 
 	return separated
 }
+
+func findSubstring(str, substr) {
+	if gettype(str) != "string" {
+		throw("String argument must be a string value")
+	}else if gettype(substr) != "string" {
+		throw("Sub-string argument must be a string value")
+	}
+	if len(substr) > len(str) {
+		return -1, -1
+	}
+
+	yar offset = len(substr)-1
+
+	yar i = 0
+	while i+offset < len(str) {
+		yar nsubstr = cut(str, i, i+offset)
+		if nsubstr == substr {
+			return i, i+offset
+		}
+
+		i = i + 1
+	}
+
+	return -1, -1
+}
