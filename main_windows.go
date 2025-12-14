@@ -190,6 +190,10 @@ func help([]string) {
 	}
 }
 
+func a() (int, int) {
+	return 1, 1
+}
+
 func handle(err error) {
 	if err != nil {
 		panic(err)

@@ -130,6 +130,7 @@ func (cell *Cell) Set(value any, nonptr bool) {
 		cell.DataType = "nil"
 		cell.Ptr = nil
 	default:
+		fmt.Println(value)
 		fmt.Printf("%T\n", value)
 		panic("Unsupported type in Cell.Set")
 	}
@@ -1196,6 +1197,8 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 
 	f := binOperations[node.operator]
 
+	//fmt.Println("L:", l, ",R:", r, ", OP:", node.operator)
+
 	return f(l, r, node.X, node.Y)
 }
 
@@ -1581,7 +1584,7 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 		}
 
 		return append([]any{}, funcDec.Template(
-			append(args, inter.CookValues(len(node.Arguments), argsValues, node.X, node.Y)...)...,
+			append(args, inter.CookValues(uint(len(node.Arguments)), argsValues, node.X, node.Y)...)...,
 		)...,
 		)
 	}
@@ -1879,11 +1882,11 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 	return structObject
 }
 
-func (inter *Interpreter) CookValues(max_i int, values [][]Node, x, y int) []any {
+func (inter *Interpreter) CookValues(max_i uint, values [][]Node, x, y int) []any {
 	readyValues := []any{}
 
-	for i := 0; i < max_i; i++ {
-		if i >= len(values) {
+	for i := uint(0); i < max_i; i++ {
+		if i >= uint(len(values)) {
 			break
 		}
 		node := values[i]
@@ -1898,8 +1901,8 @@ func (inter *Interpreter) CookValues(max_i int, values [][]Node, x, y int) []any
 		}
 	}
 
-	if len(readyValues) < max_i {
-		readyValues = append(readyValues, make([]any, max_i-len(readyValues))...)
+	if uint(len(readyValues)) < max_i {
+		readyValues = append(readyValues, make([]any, max_i-uint(len(readyValues)))...)
 	}
 
 	return readyValues
@@ -1920,10 +1923,10 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 	case *StructDeclNode:
 		inter.DeclareStructure(node)
 	case *VarDec:
-		readyValues := inter.CookValues(len(node.Identifier), node.Value, node.X, node.Y)
+		readyValues := inter.CookValues(uint(len(node.Identifier)), node.Value, node.X, node.Y)
 
 		if len(readyValues) > len(node.Identifier) && !node.Argument {
-			throw("Too many values for %d identifier(s).", node.X, node.Y, len(node.Identifier))
+			throw("Too many values(%d) for %d identifier(s).", node.X, node.Y, len(readyValues), len(node.Identifier))
 		} else if len(readyValues) > len(node.Identifier) && node.Argument {
 			throw("Attempt to use multiple values as a single argument.", node.X, node.Y)
 		}
@@ -1934,7 +1937,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 			}
 		}
 	case *SetVar:
-		readyValues := inter.CookValues(len(node.Value), node.Value, node.X, node.Y)
+		readyValues := inter.CookValues(uint(len(node.Value)), node.Value, node.X, node.Y)
 
 		if len(readyValues) > len(node.Var) {
 			throw("Too many values in assignment", node.X, node.Y)
@@ -2000,7 +2003,9 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 	case *BreakNode:
 		return true, false, nil
 	case *ReturnNode:
-		var returnValue []any = nil
+		readyValues := inter.CookValues(uint(len(node.Value)), node.Value, node.X, node.Y)
+
+		/*var returnValue []any = nil
 		if len(node.Value) > 0 {
 			returnValue = []any{}
 			for _, value := range node.Value {
@@ -2010,9 +2015,9 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 					returnValue = append(returnValue, ReturnNil{})
 				}
 			}
-		}
+		}*/
 
-		return true, false, returnValue
+		return true, false, readyValues
 	case *Import:
 		{
 			if inter.UnableToImport {

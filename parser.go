@@ -426,7 +426,7 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 		"and", "or":
 		lastNode := getLastNode(nodes)
 		if lastNode == nil {
-			if currentToken.Type == "sub" || currentToken.Type == "mul" {
+			if currentToken.Type == "sub" {
 				parser.Next()
 				return append(nodes, &BinOpNode{
 					operator: currentToken.Type,
@@ -434,14 +434,14 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 					Y:        y,
 				})
 			}
-			throw("Expected left operand for '%s' binary operation got nothing nigger.", x, y, currentToken.Type)
+			throw("Expected left operand for '%s' binary operation got nothing.", x, y, currentToken.Type)
 		} else {
-
 			binOpNode := &BinOpNode{
 				operator: currentToken.Type,
 				X:        x,
 				Y:        y,
 			}
+
 			switch node := lastNode.(type) {
 			case *BinOpNode:
 				switch node.operator {
@@ -457,13 +457,16 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 						return nodes
 					}
 
-					if currentToken.Type == "and" || currentToken.Type == "or" {
+					/*if currentToken.Type == "and" || currentToken.Type == "or" {
 						binOpNode.L = node
 						nodes = replaceLastNodeWith(nodes, binOpNode)
 					} else {
-						binOpNode.L = getLastRightOperand(node)
-						setLastRightOperand(node, binOpNode)
-					}
+						binOpNode.L = node
+						//setLastRightOperand(node, binOpNode)
+						nodes = replaceLastNodeWith(nodes, binOpNode)
+					}*/
+					binOpNode.L = node
+					nodes = replaceLastNodeWith(nodes, binOpNode)
 				}
 			default:
 				binOpNode.L = node
