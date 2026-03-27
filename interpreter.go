@@ -1288,29 +1288,6 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 	case *GetFieldNode:
 		cell := inter.GetInstanceFieldCell(node)
 
-		/*structObjNode, fieldNodes := inter.GetStructAndFieldNames(node, []Node{})
-		if structObjNode == nil {
-			throw("Attempt to get field of nothing.", node.X, node.Y)
-		}
-
-		structObj, ok := inter.GetNodeValue(structObjNode).(*StructObject)
-		if !ok {
-			throw("Attempt to get field of a non-structure value.", structObjNode.Position(), structObjNode.Line())
-		}
-
-		fields := []string{}
-		for _, fieldNode := range fieldNodes {
-
-			fieldIdentNode, ok := fieldNode.(*IdentNode)
-			if !ok {
-				throw("Field name must be an identifier", fieldNode.Position(), fieldNode.Line())
-			}
-
-			fields = append(fields, fieldIdentNode.Value)
-		}
-
-		return inter.GetFieldValueByNames(structObj, fields, node, 0)*/
-
 		return cell.Get()
 	case *GetElementNode:
 		tableNode, keyNodes := inter.GetTableAndKeys(node, []Node{})

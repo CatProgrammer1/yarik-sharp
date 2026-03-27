@@ -97,6 +97,9 @@ var (
 			}
 			return nil
 		},
+		"time": func(v ...any) []any {
+			return []any{time.Now().UnixMilli()}
+		},
 		"tostr": func(v ...any) []any {
 			return []any{format(v[BUILTIN_SPECIALS:]...)}
 		},

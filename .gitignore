@@ -4,5 +4,4 @@
 *.asm
 *.exe
 *.bin
-*.yks
 bin/
