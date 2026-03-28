@@ -226,6 +226,60 @@ var (
 			return []any{r1, r2, err}
 		},
 
+		"kernelcall": func(v ...any) []any {
+			argsCheck(v, 2, 2, "string", "table")
+
+			x, y := v[0].(int), v[1].(int)
+			inter := v[2].(*Interpreter)
+
+			v = v[BUILTIN_SPECIALS:]
+
+			procName := v[0].(string)
+			paramsMap := v[1].(*Map)
+
+			params := make([]uintptr, paramsMap.Len())
+			buffers := make([]any, paramsMap.Len())
+			i := 0
+
+			for _, v := range paramsMap.AllFromFront() {
+				ptr, buf := valueToPtr(v.Get(), x, y)
+				if buf != nil {
+					buffers[i] = buf
+				}
+
+				params[i] = ptr
+				i++
+			}
+
+			ntdll := syscall.NewLazyDLL("kernel32.dll")
+			proc := ntdll.NewProc(procName)
+
+			procerr := proc.Find()
+			if procerr != nil {
+				return []any{uintptr(0), uintptr(0), procerr}
+			}
+
+			r1, r2, err := proc.Call(params...)
+
+			for _, ptr := range params {
+				value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
+				if value == nil {
+					continue
+				}
+
+				switch value := value.Get().(type) {
+				case *StructObject:
+					layout := value.Layout()
+
+					value.FromMemoryLayout(layout)
+				case *Map:
+					value.FromMemory()
+				}
+			}
+
+			return []any{r1, r2, err}
+		},
+
 		"call": func(v ...any) []any {
 			argsCheck(v, 3, 3, "string", "string", "table")
 

@@ -51,6 +51,7 @@ func concat(a, b) {
     foreach k,v = b {
         a[k] = v
     }
+    
     return a
 }
 
