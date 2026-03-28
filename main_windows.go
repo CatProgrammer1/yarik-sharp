@@ -291,7 +291,9 @@ func main() { //*go run yks runinfo test.yks
 
 		lexer := NewLexer(src)
 
-		fmt.Println(lexer.GetTokens())
+		for k, token := range lexer.GetTokens() {
+			fmt.Printf("%d)'%s' - %s: %d,%d\n", k, token.Value, token.Type, token.Line, token.Position)
+		}
 	}
 	commands["version"] = func(args []string) {
 		fmt.Printf("%s version %s%d.%d.%d-%s", plName, shortennedPLName, major, minor, patch, stage)

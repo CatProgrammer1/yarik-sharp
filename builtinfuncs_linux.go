@@ -279,6 +279,12 @@ var (
 	}
 )
 
+func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]Node, addr uintptr) (uintptr, uintptr, error) {
+	throw("Cannot perform function pointer call on Unix based OS.", node.Position(), node.Line())
+
+	return 0, 0, nil
+}
+
 func valueToPtr(v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
 	case float64:

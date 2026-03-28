@@ -172,6 +172,31 @@ var (
 			return []any{string(r)}
 		},
 
+		"bytes": func(v ...any) []any {
+			argsCheck(v, 1, 1, "string")
+
+			v = v[BUILTIN_SPECIALS:]
+
+			str := v[0].(string)
+
+			slice, err := syscall.ByteSliceFromString(str)
+			handle(err)
+
+			m := &Map{
+				OrderedMap: orderedmap.NewOrderedMap[any, *Cell](),
+				Bits:       8,
+			}
+			m.ToMemory()
+
+			for i, v := range slice {
+				m.Set(int64(i), CLPTR(int64(v)))
+			}
+
+			return []any{
+				m,
+			}
+		},
+
 		"ptr": func(v ...any) []any {
 			argsCheck(v, 1, 1, "int")
 
@@ -225,7 +250,7 @@ var (
 
 			r1, r2, err := proc.Call(params...)
 
-			for _, ptr := range params {
+			/*for _, ptr := range params {
 				value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
 				if value == nil {
 					continue
@@ -239,7 +264,9 @@ var (
 				case *Map:
 					value.FromMemory()
 				}
-			}
+			}*/
+
+			refreshPointerValues(inter, params)
 
 			return []any{r1, r2, err}
 		},
@@ -281,8 +308,8 @@ var (
 				i++
 			}
 
-			ntdll := syscall.NewLazyDLL("kernel32.dll")
-			proc := ntdll.NewProc(procName)
+			kernel := syscall.NewLazyDLL("kernel32.dll")
+			proc := kernel.NewProc(procName)
 
 			procerr := proc.Find()
 			if procerr != nil {
@@ -291,7 +318,7 @@ var (
 
 			r1, r2, err := proc.Call(params...)
 
-			for _, ptr := range params {
+			/*for _, ptr := range params {
 				value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
 				if value == nil {
 					continue
@@ -305,12 +332,32 @@ var (
 				case *Map:
 					value.FromMemory()
 				}
-			}
+			}*/
+
+			refreshPointerValues(inter, params)
 
 			return []any{r1, r2, err}
 		},
 	}
 )
+
+func refreshPointerValues(inter *Interpreter, ptrs []uintptr) {
+	for _, ptr := range ptrs {
+		value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
+		if value == nil {
+			continue
+		}
+
+		switch value := value.Get().(type) {
+		case *StructObject:
+			layout := value.Layout()
+
+			value.FromMemoryLayout(layout)
+		case *Map:
+			value.FromMemory()
+		}
+	}
+}
 
 func valueToPtr(v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
@@ -339,4 +386,28 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 		throw("Unsupported type.", x, y)
 	}
 	return 0, nil
+}
+
+func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]Node, addr uintptr) (uintptr, uintptr, error) {
+	args := inter.CookValues(argsLen, argsValues, node.Position(), node.Line())
+
+	params := make([]uintptr, len(args))
+	buffers := make([]any, len(args))
+	i := 0
+
+	for _, v := range args {
+		ptr, buf := valueToPtr(v, node.Position(), node.Line())
+		if buf != nil {
+			buffers[i] = buf
+		}
+
+		params[i] = ptr
+		i++
+	}
+
+	r1, r2, err := syscall.SyscallN(addr, params...)
+
+	refreshPointerValues(inter, params)
+
+	return r1, r2, error(err)
 }

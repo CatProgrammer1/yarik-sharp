@@ -1576,58 +1576,90 @@ func (inter *Interpreter) Current(scope *Scope) {
 }
 
 func (inter *Interpreter) CallFunction(node *FuncCall) []any {
-	funcDec, ok := inter.GetNodeValue(node.Func).(*FuncDec)
-	if !ok {
-		throw("Attempt to call a non-function object.", node.X, node.Y)
-	}
+	funcDecInterface := inter.GetNodeValue(node.Func)
 
-	if funcDec.Template != nil {
-		args := []any{node.X, node.Y, inter}
-
+	switch funcDec := funcDecInterface.(type) {
+	case uintptr:
 		argsValues := [][]Node{}
 		for _, argNode := range node.Arguments {
 			argsValues = append(argsValues, []Node{argNode})
 		}
 
-		return append([]any{}, funcDec.Template(
-			append(args, inter.CookValues(uint(len(node.Arguments)), argsValues, node.X, node.Y)...)...,
-		)...,
-		)
+		/*args := inter.CookValues(uint(len(node.Arguments)), argsValues, node.X, node.Y)
+
+		params := make([]uintptr, len(args))
+		buffers := make([]any, len(args))
+		i := 0
+
+		for _, v := range args {
+			ptr, buf := valueToPtr(v, node.X, node.Y)
+			if buf != nil {
+				buffers[i] = buf
+			}
+
+			params[i] = ptr
+			i++
+		}
+
+		r1, r2, err := syscall.SyscallN(funcDec, params...)
+
+		refreshPointerValues(inter, params)*/
+
+		r1, r2, err := syscallAddress(inter, node, uint(len(node.Arguments)), argsValues, funcDec)
+
+		return []any{r1, r2, error(err)}
+	case *FuncDec:
+		if funcDec.Template != nil {
+			args := []any{node.X, node.Y, inter}
+
+			argsValues := [][]Node{}
+			for _, argNode := range node.Arguments {
+				argsValues = append(argsValues, []Node{argNode})
+			}
+
+			return append([]any{}, funcDec.Template(
+				append(args, inter.CookValues(uint(len(node.Arguments)), argsValues, node.X, node.Y)...)...,
+			)...,
+			)
+		}
+
+		body := funcDec.Body
+		argsBody := []Node{}
+
+		if len(node.Arguments) > len(funcDec.Arguments) {
+			throw("Attempt to pass more arguments to a function call than function actually need.", node.X, node.Y)
+		}
+
+		argsIdentifiers := funcDec.Arguments //[]IdentNode{}
+		argsValues := [][]Node{}
+
+		for _, argNode := range node.Arguments {
+			//argsIdentifiers = append(argsIdentifiers, funcDec.Arguments[i])
+			argsValues = append(argsValues, []Node{argNode})
+		}
+
+		argsBody = append(argsBody, &VarDec{
+			Identifier: argsIdentifiers,
+			Value:      argsValues,
+			Argument:   true,
+			X:          node.X,
+			Y:          node.Y,
+		})
+
+		addToScope := [][2]any{}
+
+		body = slices.Concat(argsBody, body)
+		if funcDec.Self != nil {
+			addToScope = [][2]any{{selfKeyword, funcDec.Self}}
+		}
+
+		_, _, value := inter.CompeleteBody(body, true, false, addToScope...)
+
+		return value
+	default:
+		throw("Attempt to call a non-function object.", node.X, node.Y)
+		return nil
 	}
-
-	body := funcDec.Body
-	argsBody := []Node{}
-
-	if len(node.Arguments) > len(funcDec.Arguments) {
-		throw("Attempt to pass more arguments to a function call than function actually need.", node.X, node.Y)
-	}
-
-	argsIdentifiers := funcDec.Arguments //[]IdentNode{}
-	argsValues := [][]Node{}
-
-	for _, argNode := range node.Arguments {
-		//argsIdentifiers = append(argsIdentifiers, funcDec.Arguments[i])
-		argsValues = append(argsValues, []Node{argNode})
-	}
-
-	argsBody = append(argsBody, &VarDec{
-		Identifier: argsIdentifiers,
-		Value:      argsValues,
-		Argument:   true,
-		X:          node.X,
-		Y:          node.Y,
-	})
-
-	addToScope := [][2]any{}
-
-	body = slices.Concat(argsBody, body)
-	if funcDec.Self != nil {
-		addToScope = [][2]any{{selfKeyword, funcDec.Self}}
-	}
-
-	_, _, value := inter.CompeleteBody(body, true, false, addToScope...)
-
-	return value
 }
 
 func (inter *Interpreter) CompeleteBody(body []Node, isFunc, isLoop bool, addToScope ...[2]any) (end, skip bool, value []any) {
