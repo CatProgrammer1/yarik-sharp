@@ -100,7 +100,7 @@ var (
 		"time": func(v ...any) []any {
 			return []any{time.Now().UnixMilli()}
 		},
-		"tostr": func(v ...any) []any {
+		"strformat": func(v ...any) []any {
 			return []any{format(v[BUILTIN_SPECIALS:]...)}
 		},
 		"gettype": func(v ...any) []any {
@@ -141,7 +141,7 @@ var (
 			}
 		},
 
-		"bytestostr": func(v ...any) []any {
+		"string": func(v ...any) []any {
 			argsCheck(v, 1, 1, "table")
 
 			v = v[BUILTIN_SPECIALS:]
@@ -242,6 +242,18 @@ var (
 			}
 
 			return []any{r1, r2, err}
+		},
+
+		"closehandle": func(v ...any) []any {
+			argsCheck(v, 1, 1, "ptr")
+
+			v = v[BUILTIN_SPECIALS:]
+
+			ptr := v[0].(uintptr)
+
+			err := syscall.CloseHandle(syscall.Handle(ptr))
+
+			return []any{err}
 		},
 
 		"kernelcall": func(v ...any) []any {

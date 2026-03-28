@@ -1,4 +1,32 @@
 import "sys"
+import "tables"
+
+struct File {
+    h,
+    func read(buf) {
+        if buf == void {
+            buf = make(1024, 0, 8)
+        }
+
+        yar bytesRead = 0
+
+        yar r1, r2, err = kernelcall("ReadFile", [
+            this->h,
+            &buf,
+            len(buf),
+            &bytesRead,
+            void,
+            ]
+        )
+
+        return buf, err
+    }
+    func close() {
+        yar err = closehandle(this->h)
+
+        return err
+    }
+}
 
 func create(name) {
     yar r1, r2, err = kernelcall("CreateFileW", [name,
@@ -9,5 +37,21 @@ func create(name) {
 		0,]
         )
 
-    print(r1, r2, err)
+    return new File{
+        h: r1,
+    }, err
+}
+
+func open(name) {
+    yar r1, r2, err = kernelcall("CreateFileW", [name,
+        GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE,
+		void,
+		OPEN_EXISTING,
+		FILE_ATTRIBUTE_NORMAL,
+		0,]
+        )
+
+    return new File{
+        h: r1,
+    }, err
 }

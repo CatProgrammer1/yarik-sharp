@@ -281,6 +281,11 @@ func anyToBytes(v []any, m *Map) []byte {
 
 			binary.Write(buf, binary.LittleEndian, uint32(len(t.LastMem)))
 			buf.Write(t.LastMem)
+		case nil:
+			m.Layout = append(m.Layout, "uint")
+			m.Pointers = append(m.Pointers, nil)
+
+			binary.Write(buf, binary.LittleEndian, 0)
 		default:
 			fmt.Printf("%T\n", t)
 			panic("Unsupported type")
@@ -433,165 +438,6 @@ var (
 	typeName = regexp.MustCompile(`<\*(?:[^.]+\.)?([^ ]+)`)
 )
 
-func format(v ...any) string {
-	var formated string
-
-	for i, a := range v {
-		var suffix string
-		if i != len(v)-1 {
-			suffix = " "
-		}
-
-		switch a := a.(type) {
-		case *Map:
-			mapFormat := "{%s}"
-			elemFormat := "[%s]: %s,"
-
-			var elements string
-			i := 0
-			for k, v := range a.AllFromFront() {
-				var elementSuffix string
-				if i != a.Len()-1 {
-					elementSuffix = " "
-				}
-
-				elements += fmt.Sprintf(elemFormat+elementSuffix, format(k), format(v.Get()))
-				i++
-			}
-
-			formated += fmt.Sprintf(mapFormat, elements) + suffix
-		case error:
-			formated += fmt.Sprint(a.Error()) + suffix
-		case *FuncDec, *Structure:
-			formated += fmt.Sprintf("%p", a) + suffix
-		case *StructObject:
-			structFormat := "%s{%s}"
-			fieldFormat := "%s: %s;"
-
-			var fields string
-
-			i := 0
-			for _, field := range a.Fields {
-				var fieldSuffix string
-				if i != len(a.Fields)-1 {
-					fieldSuffix = " "
-				}
-				cell := field.Value
-
-				fields += fmt.Sprintf(fieldFormat+fieldSuffix, field.Identifier, format(cell.Get()))
-				i++
-			}
-
-			formated += fmt.Sprintf(structFormat, a.Identifier, fields) + suffix
-		case uintptr:
-			formated += fmt.Sprintf("%#x", a) + suffix
-		case nil:
-			for k, t := range tokenTypes {
-				if t == "nil" {
-					formated += fmt.Sprintf("<%s>", k) + suffix
-					break
-				}
-			}
-		default:
-			formated += fmt.Sprint(a) + suffix
-		}
-	}
-
-	return formated
-}
-
-func importModule(path string, mainScope *Scope) {
-	if !strings.HasSuffix(path, fileType) {
-		path += fileType
-	}
-	pathNS, _ := strings.CutSuffix(path, fileType)
-	absPath := getAbsPath(path)
-
-	for _, tag := range osTags {
-		absPathTag := absPath + tag
-		var finalPath string
-
-		for _, filePath := range filesBeingUsed {
-			if filePath[0] == absPathTag {
-				throwNoPos("Recursive or duplicate import of file '%s' detected.", filePath[1])
-			}
-		}
-
-		finalPath = pathNS + tag + fileType
-		_, err := os.Stat(finalPath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				finalPath = filepath.Join(libs, pathNS) + tag + fileType
-
-				_, errS := os.Stat(finalPath)
-				if errS != nil {
-					continue
-				}
-			} else {
-				continue
-			}
-		}
-
-		moduleData := run(finalPath, path, false)
-
-		for k, v := range moduleData {
-			cell := &Cell{}
-			cell.Set(v.Get(), false)
-
-			mainScope.Data[k] = cell
-			mainScope.Pointers[cell.Ptr] = cell
-		}
-		return
-	}
-	throwNoPos("Invalid file or library '%s'", path)
-}
-
-func mapToSlice[T any](m *Map) []T {
-	slice := make([]T, m.Len())
-
-	var t T
-
-	for k, v := range m.AllFromFront() {
-		kind := reflect.ValueOf(t).Kind()
-
-		switch kind {
-		case reflect.Uint8:
-			if reflect.ValueOf(v.Get()).Kind() == reflect.Float64 {
-				fk, _ := numberToFloat64(k)
-				slice[int(fk)] = any(byte(v.Get().(float64))).(T)
-				break
-			}
-			fallthrough
-		default:
-			fk, _ := numberToFloat64(k)
-			slice[int(fk)] = v.Get().(T)
-		}
-	}
-
-	return slice
-}
-
-func mapToSliceAny(m *Map) []any {
-	slice := make([]any, m.Len())
-
-	i := 0
-	for _, v := range m.AllFromFront() {
-		slice[i] = v.Get()
-		i++
-	}
-
-	return slice
-}
-
-func getInterfaceType(v any) string {
-	typeSM := typeName.FindAllStringSubmatch(reflect.ValueOf(v).String(), -1)
-	if len(typeSM) == 0 {
-		return ""
-	}
-
-	return typeSM[0][1]
-}
-
 func NewScope(parent *Scope) *Scope {
 	return &Scope{
 		Data:     make(map[any]*Cell),
@@ -620,6 +466,11 @@ func (scope *Scope) Add(key, value any) (success bool) {
 	case *StructObject:
 		for _, field := range value.Fields {
 			fcell := field.Value
+
+			scope.Pointers[fcell.Ptr] = fcell
+		}
+		for _, field := range value.Methods {
+			fcell := field.Func
 
 			scope.Pointers[fcell.Ptr] = fcell
 		}
@@ -725,10 +576,31 @@ type FieldDecl struct {
 	Func       *FuncDec
 }
 
+func newInstance(name string, fields []*Field, methods []*Method) *StructObject {
+	return &StructObject{
+		Identifier: name,
+		Fields:     fields,
+		Methods:    methods,
+		LastMem:    []byte{},
+	}
+}
+
 type StructObject struct {
 	Identifier string
 	Fields     []*Field
+	Methods    []*Method
 	LastMem    []byte
+}
+
+type Field struct {
+	Identifier string
+	LayoutType int8
+	Value      *Cell
+}
+
+type Method struct {
+	Identifier string
+	Func       *Cell
 }
 
 type FieldLayout struct {
@@ -889,7 +761,6 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout) {
 			subLayout := sub.Layout()
 			subSize := subLayout[len(subLayout)-1].Offset + subLayout[len(subLayout)-1].Size
 
-			// Берём данные из памяти по offset
 			if offset+int(subSize) > len(mem) {
 				panic("memory slice out of bounds")
 			}
@@ -1058,7 +929,8 @@ func (s *StructObject) Layout() []FieldLayout {
 			case float64:
 				size, align, typ = 8, 8, "float"
 			default:
-				throwNoPos("Unsupported field type: %s", field.Identifier)
+				fmt.Printf("%T\n", v)
+				panic("Unsupported field type: " + field.Identifier)
 			}
 		}
 
@@ -1084,6 +956,12 @@ func (structObj *StructObject) Get(fieldName string) (any, bool) {
 			return cell.Get(), true
 		}
 	}
+	for _, field := range structObj.Methods {
+		if field.Identifier == fieldName {
+			cell := field.Func
+			return cell.Get(), true
+		}
+	}
 	return nil, false
 }
 
@@ -1091,6 +969,12 @@ func (structObj *StructObject) GetCell(fieldName string) (*Cell, bool) {
 	for _, field := range structObj.Fields {
 		if field.Identifier == fieldName {
 			cell := field.Value
+			return cell, true
+		}
+	}
+	for _, method := range structObj.Methods {
+		if method.Identifier == fieldName {
+			cell := method.Func
 			return cell, true
 		}
 	}
@@ -1116,33 +1000,178 @@ func (structObj *StructObject) CheckFormat(format ...[2]string) bool {
 func (structObj *StructObject) Set(fieldName string, value any) bool {
 	for _, field := range structObj.Fields {
 		cell := field.Value
-		if field.Method {
-			method := cell.Get().(*FuncDec)
-
-			throw("Cannot assign value to a instance's method.", method.X, method.Y)
-		}
 		if field.Identifier == fieldName {
 			cell.Set(value, false)
 
 			return true
 		}
 	}
+	for _, method := range structObj.Methods {
+		if method.Identifier == fieldName {
+			funcDecl := method.Func.Get().(*FuncDec)
+			throw("Cannot assign value to a instance's method.", funcDecl.X, funcDecl.Y)
+		}
+	}
 	return false
 }
 
-type Field struct {
-	Identifier string
-	Method     bool
-	LayoutType int8
-	Value      *Cell
+func format(v ...any) string {
+	var formated string
+
+	for i, a := range v {
+		var suffix string
+		if i != len(v)-1 {
+			suffix = " "
+		}
+
+		switch a := a.(type) {
+		case *Map:
+			mapFormat := "{%s}"
+			elemFormat := "[%s]: %s,"
+
+			var elements string
+			i := 0
+			for k, v := range a.AllFromFront() {
+				var elementSuffix string
+				if i != a.Len()-1 {
+					elementSuffix = " "
+				}
+
+				elements += fmt.Sprintf(elemFormat+elementSuffix, format(k), format(v.Get()))
+				i++
+			}
+
+			formated += fmt.Sprintf(mapFormat, elements) + suffix
+		case error:
+			formated += fmt.Sprint(a.Error()) + suffix
+		case *FuncDec, *Structure:
+			formated += fmt.Sprintf("%p", a) + suffix
+		case *StructObject:
+			structFormat := "%s{%s}"
+			fieldFormat := "%s: %s;"
+
+			var fields string
+
+			i := 0
+			for _, field := range a.Fields {
+				var fieldSuffix string
+				if i != len(a.Fields)-1 {
+					fieldSuffix = " "
+				}
+				cell := field.Value
+
+				fields += fmt.Sprintf(fieldFormat+fieldSuffix, field.Identifier, format(cell.Get()))
+				i++
+			}
+
+			formated += fmt.Sprintf(structFormat, a.Identifier, fields) + suffix
+		case uintptr:
+			formated += fmt.Sprintf("%#x", a) + suffix
+		case nil:
+			for k, t := range tokenTypes {
+				if t == "nil" {
+					formated += fmt.Sprintf("<%s>", k) + suffix
+					break
+				}
+			}
+		default:
+			formated += fmt.Sprint(a) + suffix
+		}
+	}
+
+	return formated
 }
 
-func newInstance(name string, fields []*Field) *StructObject {
-	return &StructObject{
-		Identifier: name,
-		Fields:     fields,
-		LastMem:    []byte{},
+func importModule(path string, mainScope *Scope) {
+	if !strings.HasSuffix(path, fileType) {
+		path += fileType
 	}
+	pathNS, _ := strings.CutSuffix(path, fileType)
+	absPath := getAbsPath(path)
+
+	for _, tag := range osTags {
+		absPathTag := absPath + tag
+		var finalPath string
+
+		for _, filePath := range filesBeingUsed {
+			if filePath[0] == absPathTag {
+				throwNoPos("Recursive or duplicate import of file '%s' detected.", filePath[1])
+			}
+		}
+
+		finalPath = pathNS + tag + fileType
+		_, err := os.Stat(finalPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				finalPath = filepath.Join(libs, pathNS) + tag + fileType
+
+				_, errS := os.Stat(finalPath)
+				if errS != nil {
+					continue
+				}
+			} else {
+				continue
+			}
+		}
+
+		moduleData := run(finalPath, path, false)
+
+		for k, v := range moduleData {
+			cell := &Cell{}
+			cell.Set(v.Get(), false)
+
+			mainScope.Data[k] = cell
+			mainScope.Pointers[cell.Ptr] = cell
+		}
+		return
+	}
+	throwNoPos("Invalid file or library '%s'", path)
+}
+
+func mapToSlice[T any](m *Map) []T {
+	slice := make([]T, m.Len())
+
+	var t T
+
+	for k, v := range m.AllFromFront() {
+		kind := reflect.ValueOf(t).Kind()
+
+		switch kind {
+		case reflect.Uint8:
+			if reflect.ValueOf(v.Get()).Kind() == reflect.Float64 {
+				fk, _ := numberToFloat64(k)
+				slice[int(fk)] = any(byte(v.Get().(float64))).(T)
+				break
+			}
+			fallthrough
+		default:
+			fk, _ := numberToFloat64(k)
+			slice[int(fk)] = v.Get().(T)
+		}
+	}
+
+	return slice
+}
+
+func mapToSliceAny(m *Map) []any {
+	slice := make([]any, m.Len())
+
+	i := 0
+	for _, v := range m.AllFromFront() {
+		slice[i] = v.Get()
+		i++
+	}
+
+	return slice
+}
+
+func getInterfaceType(v any) string {
+	typeSM := typeName.FindAllStringSubmatch(reflect.ValueOf(v).String(), -1)
+	if len(typeSM) == 0 {
+		return ""
+	}
+
+	return typeSM[0][1]
 }
 
 type Interpreter struct {
@@ -1801,6 +1830,7 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 	}
 
 	fields := []*Field{}
+	methods := []*Method{}
 
 	for _, fieldDecl := range originalStructure.Fields {
 		if fieldDecl.Func == nil {
@@ -1811,10 +1841,9 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		cell := &Cell{}
 		cell.Set(fieldDecl.Func, false)
 
-		fields = append(fields, &Field{
+		methods = append(methods, &Method{
 			Identifier: fieldDecl.Identifier,
-			Method:     fieldDecl.Method,
-			Value:      cell,
+			Func:       cell,
 		})
 	}
 
@@ -1848,12 +1877,13 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 
 		fields = append(fields, &Field{
 			Identifier: fieldNode.Identifier.Value,
-			LayoutType: bits,
 			Value:      cell,
+			LayoutType: bits,
 		})
 	}
 
 	structObject.Fields = fields
+	structObject.Methods = methods
 	structObject.ToMemoryLayout(structObject.Layout())
 
 	return structObject

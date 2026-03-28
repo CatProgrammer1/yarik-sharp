@@ -1,14 +1,17 @@
 func make(lenght, defaultVal, bits) {
     if gettype(lenght) != "int" {
         throw("Lenght argument must be an integer")
-    }else if gettype(bits) != "int" {
-        throw("Bits argument must be an integer")
     }
 
-    yar newbuf = [] <- bits
+    yar newbuf = void
+    if gettype(bits) != "int" {
+        newbuf = []
+    }else {
+        newbuf = [] <- bits
+    }
 
     yar i = 0
-    while i < lenght {
+    while i <= lenght {
         newbuf[i] = defaultVal
         i = i + 1
     }

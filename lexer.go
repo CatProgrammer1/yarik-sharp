@@ -12,7 +12,9 @@ const (
 	boolTrue  = "true"
 	boolFalse = "false"
 
-	selfKeyword = "this"
+	nilVoid = "void"
+
+	selfKeyword = "this" //!!!!!!!!S-E-L-F=K-E-Y-W-O-R-D!!!!!!!!
 )
 
 var (
@@ -31,13 +33,13 @@ var (
 		"new":      "newstruct",
 		"struct":   "struct",
 
-		"#bits":  "valbitcount",
-		"<-": "tableelembits",
+		"#bits": "valbitcount",
+		"<-":    "tableelembits",
 
 		boolTrue:  "bool",
 		boolFalse: "bool",
 
-		"void": "nil",
+		nilVoid: "nil",
 
 		//operators
 		"=": "assign",
@@ -202,6 +204,7 @@ func (lexer *Lexer) GetTokens() []Token {
 			lexer.Next()
 			continue
 		}
+	MAIN_SWICH:
 		switch {
 		case strings.Contains(stringChars, charStr):
 			tokens = append(tokens, lexer.GetString(charStr))
@@ -220,8 +223,10 @@ func (lexer *Lexer) GetTokens() []Token {
 
 				endPos := lexer.CurrentPosition + len(k)
 
-				if endPos >= len(lexer.SourceChar)+1 {
+				if endPos >= len(lexer.SourceChar) && lexer.CurrentPosition+1 < len(lexer.SourceChar) {
 					continue
+				} else if endPos >= len(lexer.SourceChar) && lexer.CurrentPosition+1 == len(lexer.SourceChar) {
+					endPos = lexer.CurrentPosition + 1
 				}
 				fullk := string(lexer.SourceChar[lexer.CurrentPosition:endPos])
 				if fullk != k || len(fullk) <= len(tokenStr) {
@@ -238,27 +243,35 @@ func (lexer *Lexer) GetTokens() []Token {
 			if !found {
 				ident := lexer.GetIdentifier()
 				if ident.Value == nil {
-					throw("Bro I don't even know what to write in there. But you need to know that it's the only error in the lexer and you really did something wrong", lexer.CurrentColumn, lexer.CurrentLine)
+					throw("Bro I don't even know what to write in here. But you need to know that it's the only error in the lexer and you really did something wrong", lexer.CurrentColumn, lexer.CurrentLine)
 				}
 
-				if ident.Value == boolTrue {
+				switch ident.Value {
+				case boolTrue:
 					tokens = append(tokens, NewToken(true, "bool", lexer.CurrentColumn, lexer.CurrentLine))
-					break
-				} else if ident.Value == boolFalse {
+					break MAIN_SWICH
+				case boolFalse:
 					tokens = append(tokens, NewToken(false, "bool", lexer.CurrentColumn, lexer.CurrentLine))
-					break
+					break MAIN_SWICH
+				case nilVoid:
+					tokens = append(tokens, NewToken(nil, "nil", lexer.CurrentColumn, lexer.CurrentLine))
+					break MAIN_SWICH
 				}
 
 				tokens = append(tokens, ident)
 			} else {
 				lexer.NextTimes(len(tokenStr))
 
-				if tokenStr == boolTrue {
+				switch tokenStr {
+				case boolTrue:
 					tokens = append(tokens, NewToken(true, "bool", lexer.CurrentColumn, lexer.CurrentLine))
-					break
-				} else if tokenStr == boolFalse {
+					break MAIN_SWICH
+				case boolFalse:
 					tokens = append(tokens, NewToken(false, "bool", lexer.CurrentColumn, lexer.CurrentLine))
-					break
+					break MAIN_SWICH
+				case nilVoid:
+					tokens = append(tokens, NewToken("void", "nil", lexer.CurrentColumn, lexer.CurrentLine))
+					break MAIN_SWICH
 				}
 
 				tokens = append(tokens, NewToken(tokenStr, tokenTypes[tokenStr], lexer.CurrentColumn, lexer.CurrentLine))

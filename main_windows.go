@@ -251,6 +251,12 @@ func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 	lexer := NewLexer(content)
 	tokens := lexer.GetTokens()
 
+	if info {
+		for k, token := range tokens {
+			fmt.Printf("%d)'%s' - %s: %d,%d\n", k, token.Value, token.Type, token.Line, token.Position)
+		}
+	}
+
 	parser := NewParser(tokens)
 	ast := parser.AST()
 
