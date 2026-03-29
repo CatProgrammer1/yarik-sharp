@@ -138,6 +138,8 @@ var (
 		},
 
 		"equals": func(a, b any, x, y int) any {
+			
+
 			return a == b
 		},
 		"notequals": func(a, b any, x, y int) any {

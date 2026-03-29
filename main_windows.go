@@ -252,9 +252,7 @@ func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 	tokens := lexer.GetTokens()
 
 	if info {
-		for k, token := range tokens {
-			fmt.Printf("%d)'%s' - %s: %d,%d\n", k, token.Value, token.Type, token.Line, token.Position)
-		}
+		outputTokens(tokens)
 	}
 
 	parser := NewParser(tokens)
@@ -264,11 +262,17 @@ func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 	return interpreter.Complete(info)
 }
 
+func outputTokens(tokens []Token) {
+	for k, token := range tokens {
+		fmt.Printf("%d)'%s' - %s: %d,%d\n", k, fmt.Sprint(token.Value), token.Type, token.Line, token.Position)
+	}
+}
+
 //!nasm -f bin s.asm -o test.bin
 
 // ? go build -o bin/yks.exe yks
 // *go run -race yks runinfo test.yks
-func main() { //*go run yks runinfo test.yks
+func main() { //*go run yks run test.yks
 	commands["build"] = func(args []string) {
 		//Lox
 		fmt.Println("Kys")
@@ -291,9 +295,7 @@ func main() { //*go run yks runinfo test.yks
 
 		lexer := NewLexer(src)
 
-		for k, token := range lexer.GetTokens() {
-			fmt.Printf("%d)'%s' - %s: %d,%d\n", k, token.Value, token.Type, token.Line, token.Position)
-		}
+		outputTokens(lexer.GetTokens())
 	}
 	commands["version"] = func(args []string) {
 		fmt.Printf("%s version %s%d.%d.%d-%s", plName, shortennedPLName, major, minor, patch, stage)
@@ -315,5 +317,11 @@ func main() { //*go run yks runinfo test.yks
 		help([]string{})
 		return
 	}
-	cmdFunc(args[1:])
+	args = args[1:]
+	if len(args) == 0 {
+		help([]string{})
+		return
+	}
+
+	cmdFunc(args)
 }

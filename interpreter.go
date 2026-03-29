@@ -1192,7 +1192,9 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 
 		rtype := checkDataType("number", value)
 		if rtype {
-			return -mustNTOF64(value)
+			result := -mustNTOF64(value)
+
+			return result
 		}
 		throw("Unable to use unary operator '-' on non-number value.", node.X, node.Y)
 	}
@@ -1245,6 +1247,16 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 		return node.Value
 	case *BinOpNode:
 		return inter.GetBinOpValue(node)
+	case *TypeAssert:
+		target := inter.GetNodeValue(node.Target)
+		typeName := node.Type.Value
+
+		assertValue, ok := assertType(target, typeName)
+		if !ok {
+			throw("Error occured while tried to assert value type of '%s' to '%s'", node.X, node.Y, getValueType(target), typeName)
+		}
+
+		return assertValue
 	case *Brackets:
 		return inter.GetNodeValueS(node.Value, node.X, node.Y)
 	case *MapNode:
@@ -1338,7 +1350,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 			throw("Cannot index non-table or non-string value.", node.X, node.Y)
 		}
 	}
-	throw("Invalid node '%s'.", node.Position(), node.Line(), getInterfaceType(node))
+	throw("Invalid node '%s'.111", node.Position(), node.Line(), getInterfaceType(node))
 	return nil
 }
 
@@ -1584,26 +1596,6 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 		for _, argNode := range node.Arguments {
 			argsValues = append(argsValues, []Node{argNode})
 		}
-
-		/*args := inter.CookValues(uint(len(node.Arguments)), argsValues, node.X, node.Y)
-
-		params := make([]uintptr, len(args))
-		buffers := make([]any, len(args))
-		i := 0
-
-		for _, v := range args {
-			ptr, buf := valueToPtr(v, node.X, node.Y)
-			if buf != nil {
-				buffers[i] = buf
-			}
-
-			params[i] = ptr
-			i++
-		}
-
-		r1, r2, err := syscall.SyscallN(funcDec, params...)
-
-		refreshPointerValues(inter, params)*/
 
 		r1, r2, err := syscallAddress(inter, node, uint(len(node.Arguments)), argsValues, funcDec)
 
@@ -2108,7 +2100,8 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 			throw("Unable to iterate over a non-table value.", node.X, node.Y)
 		}
 	default:
-		throw("Invalid node '%s'.", node.Position(), node.Line(), getInterfaceType(node))
+		//fmt.Printf("%T",node.(*BinOpNode).L)
+		throw("Invalid node '%s'.2222", node.Position(), node.Line(), getInterfaceType(node))
 	}
 	inter.UnableToImport = true
 	return false, false, nil

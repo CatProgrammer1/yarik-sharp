@@ -110,7 +110,7 @@ var (
 
 			return []any{getValueType(v[0])}
 		},
-		"tonum": func(v ...any) []any {
+		"numformat": func(v ...any) []any {
 			argsCheck(v, 2, 2, "string", "bool")
 			x, y := v[0].(int), v[1].(int)
 

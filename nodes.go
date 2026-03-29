@@ -44,9 +44,7 @@ func (varDec *VarDec) Line() int {
 }
 
 type NilNode struct {
-	Value      []Node
-	Identifier IdentNode
-	X, Y       int
+	X, Y int
 }
 
 func (nilNode *NilNode) Position() int {
@@ -439,4 +437,18 @@ func (indirAssign *IndirAssignNode) Position() int {
 }
 func (indirAssign *IndirAssignNode) Line() int {
 	return indirAssign.Y
+}
+
+type TypeAssert struct {
+	Target Node
+	Type   *IdentNode
+
+	X, Y int
+}
+
+func (typeAssert *TypeAssert) Position() int {
+	return typeAssert.X
+}
+func (typeAssert *TypeAssert) Line() int {
+	return typeAssert.Y
 }

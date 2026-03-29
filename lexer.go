@@ -36,6 +36,8 @@ var (
 		"#bits": "valbitcount",
 		"<-":    "tableelembits",
 
+		"?": "asserttype",
+
 		boolTrue:  "bool",
 		boolFalse: "bool",
 

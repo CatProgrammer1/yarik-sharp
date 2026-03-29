@@ -12,7 +12,7 @@ const (
 
 var (
 	tokenTypesExpects = map[string][]string{
-		"int,float,ident,string,bool,nil,openbracket,opensqbrac,newstruct": {"openbracket", "opensqbrac", "add", "bitor", "sub", "div", "mul", "pow",
+		"int,float,ident,string,bool,nil,openbracket,opensqbrac,newstruct": {"openbracket", "asserttype", "opensqbrac", "add", "bitor", "sub", "div", "mul", "pow",
 			"equals", "notequals", "greater", "less", "greatereq", "lesseq", "and", "or", "indexstruct"},
 		"add,sub,div,mul,pow,equals,notequals,greater,less,greatereq,lesseq,bitor,and,or,return,getptr": {"int", "float", "ident", "string", "bool", "openbracket", "nil"},
 		"opensqbrac,getptr": {"opensqbrac"},
@@ -62,17 +62,17 @@ func (parser *Parser) Next(expectedTokenTypes ...string) {
 
 	currentToken := parser.Tokens[parser.CurrentPosition]
 	if len(parser.Expected) > 0 && !slices.Contains(parser.Expected, currentToken.Type) {
-		throw(EXCEPTION_ERROR, currentToken.Position, currentToken.Line, parser.Expected, currentToken.Type)
+		throw(EXCEPTION_ERROR, currentToken.Position, currentToken.Line, strings.Join(parser.Expected, ","), currentToken.Type)
 	}
 	if len(parser.Unexpected) > 0 && slices.Contains(parser.Unexpected, currentToken.Type) {
-		throw(INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, parser.Expected, currentToken.Type)
+		throw(EXCEPTION_ERROR, currentToken.Position, currentToken.Line, strings.Join(parser.Expected, ","), currentToken.Type)
 	}
 
 	parser.Unexpected = []string{}
 	parser.CurrentToken = currentToken
 
 	if parser.LastToken == parser.CurrentToken {
-		throw(INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, parser.Expected, currentToken.Type)
+		throw(EXCEPTION_ERROR, currentToken.Position, currentToken.Line, strings.Join(parser.Expected, ","), currentToken.Type)
 	}
 	parser.LastToken = parser.CurrentToken
 }
@@ -420,6 +420,41 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 				return replaceLastNodeWith(nodes, node)
 			}
 		}
+	case "asserttype":
+		lastNode := getLastNode(nodes)
+		if lastNode == nil {
+			throw(INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, currentToken.Type)
+		}
+
+		typeAssert := &TypeAssert{
+			X: x,
+			Y: y,
+		}
+
+		switch lastNode := lastNode.(type) {
+		case *BinOpNode:
+			rightOp := getLastRightOperand(lastNode)
+
+			if rightOp == nil {
+				throw(INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, currentToken.Type)
+			}
+
+			typeAssert.Target = rightOp
+
+			setLastRightOperand(lastNode, typeAssert)
+		default:
+			typeAssert.Target = lastNode
+
+			nodes = replaceLastNodeWith(nodes, typeAssert)
+		}
+		parser.Next("ident")
+
+		targetTypeToken := parser.CurrentToken
+
+		typeAssert.Type = newDataTypeNode(targetTypeToken).(*IdentNode)
+		parser.Next()
+
+		return nodes
 	case "add", "sub", "div", "mul", "pow",
 		"equals", "notequals", "greater", "less", "greatereq", "lesseq",
 		"bitor",
@@ -448,6 +483,17 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 				case "mul", "div", "pow", "bitor":
 					binOpNode.L = node
 					nodes = replaceLastNodeWith(nodes, binOpNode)
+				case "add", "sub":
+					if currentToken.Type != "add" && currentToken.Type != "sub" && !(node.operator == "sub" && node.L == nil) {
+						lastROp := getLastRightOperand(node)
+
+						binOpNode.L = lastROp
+
+						setLastRightOperand(node, binOpNode)
+					} else {
+						binOpNode.L = node
+						nodes = replaceLastNodeWith(nodes, binOpNode)
+					}
 				default:
 					switch currentToken.Type {
 					case "equals", "notequals", "greater", "less", "greatereq", "lesseq":
@@ -1021,7 +1067,7 @@ FIELDS:
 			parser.Next()
 			break FIELDS
 		default:
-			throw("Invalid token '%s'.", token.Position, token.Line, parser.Expected, token.Type)
+			throw("Invalid token '%s'.", token.Position, token.Line, token.Type)
 		}
 	}
 
@@ -1065,7 +1111,7 @@ COMMENT:
 	}
 }
 
-func (parser *Parser) ParseVariable() *VarDec {
+func (parser *Parser) ParseVariable() *VarDec { //go run yks run test.yks
 	varDec := &VarDec{}
 
 	values := false
@@ -1079,16 +1125,39 @@ VARPAR:
 		case "var":
 			parser.Next("ident")
 		case "ident":
+
 			varDec.Identifier = append(varDec.Identifier, IdentNode{token.Value.(string), x, y})
-			parser.Next("assign", "comma")
+
+			parser.Next()
+
+			token = parser.CurrentToken
+			if token.Type != "assign" && token.Type != "comma" {
+				varDec.Value = [][]Node{}
+				for range varDec.Identifier {
+					varDec.Value = append(varDec.Value, []Node{
+						&NilNode{
+							X: x, Y: y,
+						},
+					})
+				}
+				break VARPAR
+			}
+
+			//parser.Next("assign", "comma")
 		case "comma":
 			parser.Next()
 			if values {
 				varDec.Value = append(varDec.Value, parser.ParseValue())
+
+				token := parser.CurrentToken
+				if token.Type != "comma" {
+					break VARPAR
+				}
 			}
 		case "assign":
 			values = true
 			parser.Next()
+
 			varDec.Value = append(varDec.Value, parser.ParseValue())
 
 			token := parser.CurrentToken
@@ -1215,11 +1284,13 @@ BRACKETPAR:
 			parser.Next()
 			break BRACKETPAR
 		default:
-			if tokenIsBinOp(token) {
+			/*if tokenIsBinOp(token) {
 				value = parser.Parse(value, false)
 			} else {
 				value = append(value, parser.ParseValue()...)
-			}
+			}*/
+
+			value = append(value, parser.ParseValue()...)
 		}
 	}
 	brackDec.Value = value
