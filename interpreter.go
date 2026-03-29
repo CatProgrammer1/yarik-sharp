@@ -1228,8 +1228,6 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 
 	f := binOperations[node.operator]
 
-	//fmt.Println("L:", l, ",R:", r, ", OP:", node.operator)
-
 	return f(l, r, node.X, node.Y)
 }
 
@@ -2049,29 +2047,46 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		}*/
 
 		return true, false, readyValues
-	case *Import:
-		{
-			if inter.UnableToImport {
-				throw("Import keyword must be at the beggining of the code.", node.Position(), node.Line())
-			}
-			if !inter.CurrentScope.MainScope {
-				throw("Cannot use import keyword outside main scope.", node.Position(), node.Line())
-			}
-
-			if len(node.Path) > 0 && len(node.Path) < 2 {
-				path, ok := node.Path[0].(*StrNode)
-				if !ok {
-					throw("Path for the import keyword cannot be a non-string value.", node.Position(), node.Line())
-				}
-
-				importModule(path.Value, inter.CurrentScope)
-			} else if len(node.Path) > 1 {
-				throw("Cannot import more than one file or module.", node.Position(), node.Line())
-			} else {
-				throw("Cannot import the file or the module without a path.", node.Position(), node.Line())
-			}
-			return false, false, nil
+	case *ExternalImport:
+		if inter.UnableToImport {
+			throw("External import keyword must be at the beggining of the code.", node.Position(), node.Line())
 		}
+		scope := inter.CurrentScope
+		if !scope.MainScope {
+			throw("Cannot use external import keyword outside main scope.", node.Position(), node.Line())
+		}
+
+		path := node.Path.Value
+		if len(path) > 0 {
+			path := node.Path.Value
+
+			loadLibraryIntoScope(path, node, scope)
+
+		} else {
+			throw("Cannot perform external import without a library path.", node.Position(), node.Line())
+		}
+		return false, false, nil
+	case *Import:
+		if inter.UnableToImport {
+			throw("Import keyword must be at the beggining of the code.", node.Position(), node.Line())
+		}
+		if !inter.CurrentScope.MainScope {
+			throw("Cannot use import keyword outside main scope.", node.Position(), node.Line())
+		}
+
+		if len(node.Path) > 0 && len(node.Path) < 2 {
+			path, ok := node.Path[0].(*StrNode)
+			if !ok {
+				throw("Path for the import keyword cannot be a non-string value.", node.Position(), node.Line())
+			}
+
+			importModule(path.Value, inter.CurrentScope)
+		} else if len(node.Path) > 1 {
+			throw("Cannot import more than one file or module.", node.Position(), node.Line())
+		} else {
+			throw("Cannot import the file or the module without a path.", node.Position(), node.Line())
+		}
+		return false, false, nil
 	case *WhileNode:
 		for inter.GetNodeValueS(node.Condition, node.X, node.Y) == true {
 			end, skip, value := inter.CompeleteBody(node.Body, false, true)

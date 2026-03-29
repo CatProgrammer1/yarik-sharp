@@ -452,3 +452,16 @@ func (typeAssert *TypeAssert) Position() int {
 func (typeAssert *TypeAssert) Line() int {
 	return typeAssert.Y
 }
+
+type ExternalImport struct {
+	Path *StrNode
+
+	X, Y int
+}
+
+func (externalImport *ExternalImport) Position() int {
+	return externalImport.X
+}
+func (externalImport *ExternalImport) Line() int {
+	return externalImport.Y
+}

@@ -279,6 +279,10 @@ var (
 	}
 )
 
+func loadLibraryIntoScope(path string, node *ExternalImport, scope *Scope) {
+	throw("Cannot load external library using '%s' external import keyword in Unix based systems", node.X, node.Y, getTokenUsingType("external_import"))
+}
+
 func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]Node, addr uintptr) (uintptr, uintptr, error) {
 	throw("Cannot perform function pointer call on Unix based OS.", node.Position(), node.Line())
 

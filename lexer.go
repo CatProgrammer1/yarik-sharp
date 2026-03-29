@@ -33,6 +33,8 @@ var (
 		"new":      "newstruct",
 		"struct":   "struct",
 
+		"@external": "external_import",
+
 		"#bits": "valbitcount",
 		"<-":    "tableelembits",
 
@@ -93,6 +95,15 @@ var (
 		"0":  "\x00",
 	}
 )
+
+func getTokenUsingType(t string) string {
+	for k, v := range tokenTypes {
+		if v == t {
+			return k
+		}
+	}
+	return ""
+}
 
 const (
 	ignore      = " \n\t\r"
@@ -244,8 +255,8 @@ func (lexer *Lexer) GetTokens() []Token {
 
 			if !found {
 				ident := lexer.GetIdentifier()
-				if ident.Value == nil {
-					throw("Bro I don't even know what to write in here. But you need to know that it's the only error in the lexer and you really did something wrong", lexer.CurrentColumn, lexer.CurrentLine)
+				if ident.Value == "" {
+					throw("Unknown character '%s'", lexer.CurrentColumn, lexer.CurrentLine, charStr)
 				}
 
 				switch ident.Value {
@@ -359,6 +370,8 @@ func (lexer *Lexer) GetString(startChar string) Token {
 				str += metacharsValue[nextChar]
 				lexer.NextTimes(2)
 				continue
+			} else {
+				throw("Unknown escape sequence", lexer.CurrentColumn, lexer.CurrentLine)
 			}
 		} else {
 			str += charStr

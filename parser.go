@@ -296,6 +296,15 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 		})
 
 		return nodes
+	case "external_import":
+		parser.Next("string")
+		nodes = append(nodes, &ExternalImport{
+			newDataTypeNode(parser.CurrentToken).(*StrNode),
+			x, y,
+		})
+		parser.Next()
+
+		return nodes
 	case "import":
 		parser.Next()
 		nodes = append(nodes, &Import{

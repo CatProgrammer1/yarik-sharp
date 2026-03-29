@@ -197,79 +197,63 @@ var (
 			}
 		},
 
-		"ptr": func(v ...any) []any {
-			argsCheck(v, 1, 1, "int")
-
-			v = v[BUILTIN_SPECIALS:]
-
-			return []any{uintptr(v[0].(int64))}
-		},
-
-		"pvoid": func(v ...any) []any {
-			argsCheck(v, 1, 1, "int")
-
-			v = v[BUILTIN_SPECIALS:]
-
-			return []any{unsafe.Pointer(uintptr(v[0].(int64)))}
-		},
-
 		//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!------------------------------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-		"syscallnt": func(v ...any) []any {
-			argsCheck(v, 2, 2, "string", "table")
+		/*"syscallnt": func(v ...any) []any {
+		argsCheck(v, 2, 2, "string", "table")
 
-			x, y := v[0].(int), v[1].(int)
-			inter := v[2].(*Interpreter)
+		x, y := v[0].(int), v[1].(int)
+		inter := v[2].(*Interpreter)
 
-			v = v[BUILTIN_SPECIALS:]
+		v = v[BUILTIN_SPECIALS:]
 
-			procName := v[0].(string)
-			paramsMap := v[1].(*Map)
+		procName := v[0].(string)
+		paramsMap := v[1].(*Map)
 
-			params := make([]uintptr, paramsMap.Len())
-			buffers := make([]any, paramsMap.Len())
-			i := 0
+		params := make([]uintptr, paramsMap.Len())
+		buffers := make([]any, paramsMap.Len())
+		i := 0
 
-			for _, v := range paramsMap.AllFromFront() {
-				ptr, buf := valueToPtr(v.Get(), x, y)
-				if buf != nil {
-					buffers[i] = buf
-				}
-
-				params[i] = ptr
-				i++
+		for _, v := range paramsMap.AllFromFront() {
+			ptr, buf := valueToPtr(v.Get(), x, y)
+			if buf != nil {
+				buffers[i] = buf
 			}
 
-			ntdll := syscall.NewLazyDLL("ntdll.dll")
-			proc := ntdll.NewProc(procName)
+			params[i] = ptr
+			i++
+		}
 
-			procerr := proc.Find()
-			if procerr != nil {
-				return []any{uintptr(0), uintptr(0), procerr}
+		ntdll := syscall.NewLazyDLL("ntdll.dll")
+		proc := ntdll.NewProc(procName)
+
+		procerr := proc.Find()
+		if procerr != nil {
+			return []any{uintptr(0), uintptr(0), procerr}
+		}
+
+		r1, r2, err := proc.Call(params...)
+
+		/*for _, ptr := range params {
+			value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
+			if value == nil {
+				continue
 			}
 
-			r1, r2, err := proc.Call(params...)
+			switch value := value.Get().(type) {
+			case *StructObject:
+				layout := value.Layout()
 
-			/*for _, ptr := range params {
-				value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
-				if value == nil {
-					continue
-				}
+				value.FromMemoryLayout(layout)
+			case *Map:
+				value.FromMemory()
+			}
+		}*/
 
-				switch value := value.Get().(type) {
-				case *StructObject:
-					layout := value.Layout()
+		//refreshPointerValues(inter, params)
 
-					value.FromMemoryLayout(layout)
-				case *Map:
-					value.FromMemory()
-				}
-			}*/
-
-			refreshPointerValues(inter, params)
-
-			return []any{r1, r2, err}
-		},
+		//return []any{r1, r2, err}
+		//},
 
 		"closehandle": func(v ...any) []any {
 			argsCheck(v, 1, 1, "ptr")
@@ -283,61 +267,61 @@ var (
 			return []any{err}
 		},
 
-		"kernelcall": func(v ...any) []any {
-			argsCheck(v, 2, 2, "string", "table")
+		/*"kernelcall": func(v ...any) []any {
+		argsCheck(v, 2, 2, "string", "table")
 
-			x, y := v[0].(int), v[1].(int)
-			inter := v[2].(*Interpreter)
+		x, y := v[0].(int), v[1].(int)
+		inter := v[2].(*Interpreter)
 
-			v = v[BUILTIN_SPECIALS:]
+		v = v[BUILTIN_SPECIALS:]
 
-			procName := v[0].(string)
-			paramsMap := v[1].(*Map)
+		procName := v[0].(string)
+		paramsMap := v[1].(*Map)
 
-			params := make([]uintptr, paramsMap.Len())
-			buffers := make([]any, paramsMap.Len())
-			i := 0
+		params := make([]uintptr, paramsMap.Len())
+		buffers := make([]any, paramsMap.Len())
+		i := 0
 
-			for _, v := range paramsMap.AllFromFront() {
-				ptr, buf := valueToPtr(v.Get(), x, y)
-				if buf != nil {
-					buffers[i] = buf
-				}
-
-				params[i] = ptr
-				i++
+		for _, v := range paramsMap.AllFromFront() {
+			ptr, buf := valueToPtr(v.Get(), x, y)
+			if buf != nil {
+				buffers[i] = buf
 			}
 
-			kernel := syscall.NewLazyDLL("kernel32.dll")
-			proc := kernel.NewProc(procName)
+			params[i] = ptr
+			i++
+		}
 
-			procerr := proc.Find()
-			if procerr != nil {
-				return []any{uintptr(0), uintptr(0), procerr}
+		kernel := syscall.NewLazyDLL("kernel32.dll")
+		proc := kernel.NewProc(procName)
+
+		procerr := proc.Find()
+		if procerr != nil {
+			return []any{uintptr(0), uintptr(0), procerr}
+		}
+
+		r1, r2, err := proc.Call(params...)
+
+		/*for _, ptr := range params {
+			value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
+			if value == nil {
+				continue
 			}
 
-			r1, r2, err := proc.Call(params...)
+			switch value := value.Get().(type) {
+			case *StructObject:
+				layout := value.Layout()
 
-			/*for _, ptr := range params {
-				value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
-				if value == nil {
-					continue
-				}
+				value.FromMemoryLayout(layout)
+			case *Map:
+				value.FromMemory()
+			}
+		}*/
 
-				switch value := value.Get().(type) {
-				case *StructObject:
-					layout := value.Layout()
+		//refreshPointerValues(inter, params)
 
-					value.FromMemoryLayout(layout)
-				case *Map:
-					value.FromMemory()
-				}
-			}*/
-
-			refreshPointerValues(inter, params)
-
-			return []any{r1, r2, err}
-		},
+		//return []any{r1, r2, err}
+		//},
 	}
 )
 

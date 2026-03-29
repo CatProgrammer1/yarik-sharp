@@ -12,6 +12,7 @@ import (
 	"log"
 	"runtime"
 	"strconv"
+	"syscall"
 	"unsafe"
 )
 
@@ -243,6 +244,37 @@ func getAbsPath(relPath string) string {
 	return abs
 }
 
+func loadLibraryIntoScope(path string, node *ExternalImport, scope *Scope) {
+	library := syscall.NewLazyDLL(path)
+	err := library.Load()
+	if err != nil {
+		throw(err.Error(), node.X, node.Y)
+	}
+
+	name, _ := strings.CutSuffix(filepath.Base(library.Name), ".dll")
+	scope.Data[name] = CLPTR(&FuncDec{
+		Identifier: IdentNode{
+			Value: name,
+			X:     node.X,
+			Y:     node.Y,
+		},
+		Template: func(v ...any) []any {
+			argsCheck(v, 1, 1, "string")
+
+			x, y := v[0].(int), v[1].(int)
+			v = v[BUILTIN_SPECIALS:]
+
+			proc := library.NewProc(v[0].(string))
+			err := proc.Find()
+			if err != nil {
+				throw(err.Error(), x, y)
+			}
+
+			return []any{proc.Addr()}
+		},
+	})
+}
+
 func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 	if !strings.HasSuffix(fileAbs, fileType) {
 		fileAbs += fileType
@@ -277,7 +309,7 @@ func outputTokens(tokens []Token) {
 
 //!nasm -f bin s.asm -o test.bin
 
-// ? go build -o bin/yks.exe yks
+// ? go build -o bin/yks_linux yks
 // *go run -race yks runinfo test.yks
 func main() { //*go run yks run test.yks
 	commands["build"] = func(args []string) {
