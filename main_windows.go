@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 import (
+	"log"
 	"runtime"
 	"strconv"
 	"unsafe"
@@ -200,6 +201,12 @@ func handle(err error) {
 	}
 }
 
+func handleLite(err error) {
+	if err != nil {
+		log.Fatalln(err)
+	}
+}
+
 func getFileString(path string) (string, error) {
 	c, err := os.ReadFile(path)
 
@@ -278,20 +285,35 @@ func main() { //*go run yks run test.yks
 		fmt.Println("Kys")
 	}
 	commands["run"] = func(args []string) {
+		if len(args) == 0 {
+			help([]string{})
+			return
+		}
+
 		path := args[0]
 
 		run(getAbsPath(path), path, false)
 	}
 	commands["runinfo"] = func(args []string) {
+		if len(args) == 0 {
+			help([]string{})
+			return
+		}
+
 		path := args[0]
 
 		run(getAbsPath(path), path, true)
 	}
 	commands["tokens"] = func(args []string) {
+		if len(args) == 0 {
+			help([]string{})
+			return
+		}
+
 		path := args[0]
 
 		src, err := getFileString(path)
-		handle(err)
+		handleLite(err)
 
 		lexer := NewLexer(src)
 
@@ -318,10 +340,6 @@ func main() { //*go run yks run test.yks
 		return
 	}
 	args = args[1:]
-	if len(args) == 0 {
-		help([]string{})
-		return
-	}
 
 	cmdFunc(args)
 }
