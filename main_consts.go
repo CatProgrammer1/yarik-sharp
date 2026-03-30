@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -14,10 +15,10 @@ const (
 	stage               = "beta"
 )
 
-var (
+var (//go run yks run test.yks
 	args     = os.Args[1:]
 	commands = make(map[string]func(args []string))
 	libs     = filepath.Join(getParentPath(getParentPath(getSelfPath())), "src")
 
-	
+	println = fmt.Println
 )

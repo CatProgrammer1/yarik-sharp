@@ -39,6 +39,18 @@ var (
 			return nil
 		},
 
+		"lockOSThread": func(v ...any) []any {
+			runtime.LockOSThread()
+
+			return nil
+		},
+
+		"unlockOSThread": func(v ...any) []any {
+			runtime.UnlockOSThread()
+
+			return nil
+		},
+
 		"sleep": func(v ...any) []any {
 			x, y := v[0].(int), v[1].(int)
 
@@ -185,12 +197,15 @@ var (
 			m := &Map{
 				OrderedMap: orderedmap.NewOrderedMap[any, *Cell](),
 				Bits:       8,
+				Pointers:   []any{},
+				Layout:     []string{},
+				Mem:        []byte{},
 			}
-			m.ToMemory()
 
 			for i, v := range slice {
 				m.Set(int64(i), CLPTR(int64(v)))
 			}
+			m.ToMemory()
 
 			return []any{
 				m,
@@ -372,13 +387,14 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 	return 0, nil
 }
 
-func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]Node, addr uintptr) (uintptr, uintptr, error) {
+func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]Node, addr uintptr) (uintptr, uintptr, error) { //go run yks run test.yks
 	args := inter.CookValues(argsLen, argsValues, node.Position(), node.Line())
 
 	params := make([]uintptr, len(args))
 	buffers := make([]any, len(args))
 	i := 0
 
+	//println("Debug 2")
 	for _, v := range args {
 		ptr, buf := valueToPtr(v, node.Position(), node.Line())
 		if buf != nil {
@@ -388,8 +404,17 @@ func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]
 		params[i] = ptr
 		i++
 	}
+	//println("debug 2 ended")
+
+	//println("debug 3", addr, node)
+
+	
 
 	r1, r2, err := syscall.SyscallN(addr, params...)
+	runtime.KeepAlive(params)
+	runtime.KeepAlive(buffers)
+	runtime.KeepAlive(args)
+	//println("debug 3 ended")
 
 	refreshPointerValues(inter, params)
 

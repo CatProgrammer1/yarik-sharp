@@ -244,11 +244,16 @@ func getAbsPath(relPath string) string {
 	return abs
 }
 
-func loadLibraryIntoScope(path string, node *ExternalImport, scope *Scope) {
+func loadLibraryIntoScope(path string, node *ExternalImport, scope *Scope) { //go run yks run test.yks
 	library := syscall.NewLazyDLL(path)
 	err := library.Load()
 	if err != nil {
 		throw(err.Error(), node.X, node.Y)
+	}
+
+	suc := scope.Add(library, "DLL_LIBRARY")
+	if !suc {
+		throwNoPos("unsuccessfull")
 	}
 
 	name, _ := strings.CutSuffix(filepath.Base(library.Name), ".dll")
@@ -268,6 +273,11 @@ func loadLibraryIntoScope(path string, node *ExternalImport, scope *Scope) {
 			err := proc.Find()
 			if err != nil {
 				throw(err.Error(), x, y)
+			}
+
+			suc := scope.Add(proc, "DLL_PROC")
+			if !suc {
+				throwNoPos("unsuccessfull")
 			}
 
 			return []any{proc.Addr()}
@@ -309,7 +319,7 @@ func outputTokens(tokens []Token) {
 
 //!nasm -f bin s.asm -o test.bin
 
-// ? go build -o bin/yks_linux yks
+// ? go build -o bin/yks.exe yks
 // *go run -race yks runinfo test.yks
 func main() { //*go run yks run test.yks
 	commands["build"] = func(args []string) {

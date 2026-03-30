@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -17,6 +18,25 @@ import (
 
 	"github.com/elliotchance/orderedmap/v3"
 )
+
+var (
+	externalCallingChan = make(chan ExternalTask, 1024)
+)
+
+type ExternalTask struct {
+	Addr uintptr
+
+	ArgsValues [][]Node
+
+	ResultChan chan ExternalTaskResult
+
+	FuncCall *FuncCall
+}
+
+type ExternalTaskResult struct {
+	R1, R2 uintptr
+	Error  error
+}
 
 type Scope struct {
 	Data           map[any]*Cell
@@ -1262,7 +1282,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 	case *FuncDec:
 		return node
 	case *FuncCall:
-		return inter.CallFunction(node)
+		return inter.CallFunction(node, false)
 	case *IdentNode:
 		v, found := inter.CurrentScope.Get(node.Value)
 		if !found {
@@ -1585,7 +1605,7 @@ func (inter *Interpreter) Current(scope *Scope) {
 	inter.CurrentScope = scope
 }
 
-func (inter *Interpreter) CallFunction(node *FuncCall) []any {
+func (inter *Interpreter) CallFunction(node *FuncCall, noReturnNeeded bool) []any {
 	funcDecInterface := inter.GetNodeValue(node.Func)
 
 	switch funcDec := funcDecInterface.(type) {
@@ -1595,9 +1615,33 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 			argsValues = append(argsValues, []Node{argNode})
 		}
 
-		r1, r2, err := syscallAddress(inter, node, uint(len(node.Arguments)), argsValues, funcDec)
+		var resultChan chan ExternalTaskResult
 
-		return []any{r1, r2, error(err)}
+		task := ExternalTask{
+			Addr: funcDec,
+
+			ArgsValues: argsValues,
+
+			ResultChan: nil,
+
+			FuncCall: node,
+		}
+
+		if !noReturnNeeded {
+			resultChan = make(chan ExternalTaskResult, 1)
+
+			task.ResultChan = resultChan
+		}
+
+		externalCallingChan <- task
+		if !noReturnNeeded {
+			result := <-resultChan
+			close(resultChan)
+			return []any{result.R1, result.R2, error(result.Error)}
+		}
+
+		//r1, r2, err := syscallAddress(inter, node, uint(len(node.Arguments)), argsValues, funcDec)
+		return nil
 	case *FuncDec:
 		if funcDec.Template != nil {
 			args := []any{node.X, node.Y, inter}
@@ -2006,7 +2050,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 
 		cellOfPtr.Set(newValue, false)
 	case *FuncCall:
-		inter.GetNodeValue(node)
+		inter.CallFunction(node, true)
 	case *SetElem:
 		inter.SetElementValue(node)
 	case *IfStmt:
@@ -2122,7 +2166,28 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 	return false, false, nil
 }
 
-func (inter *Interpreter) Complete(logenv bool) map[any]*Cell {
+func (inter *Interpreter) Complete(logenv bool) map[any]*Cell { //go run yks run test.yks
+	defer func() {
+		r := recover()
+		if r != nil {
+			log.Fatalln(r)
+		}
+	}()
+
+	go func() {
+		runtime.LockOSThread()
+
+		for externalTaskArgs := range externalCallingChan {
+			r1, r2, err := syscallAddress(inter, externalTaskArgs.FuncCall, uint(len(externalTaskArgs.FuncCall.Arguments)), externalTaskArgs.ArgsValues, externalTaskArgs.Addr)
+
+			if externalTaskArgs.ResultChan != nil {
+				externalTaskArgs.ResultChan <- ExternalTaskResult{
+					r1, r2, err,
+				}
+			}
+		}
+	}()
+
 	mainScope := NewScope(nil)
 	mainScope.MainScope = true
 

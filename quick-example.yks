@@ -1,6 +1,9 @@
 /*Любые комментарии пишутся вот так, даже если только на одну линию кода*/
-
+@external "путь к библиотеке .dll(user32.dll, kernel32.dll и любые другие), работает только для виндовс, на линуксе я вам ничем не помогу, страдайте" 
 import "название файла встроенной библиотеки либо название файла которое лежить возле твоего основного файла" /*Импорт должен быть обязательно в начале*/
+
+yar MessageboxW = user32("MessageboxW") /*GetProc с импортированных внешних библиотек, возвращает адрес функции или выводит ошибку если нету такой функции ну короч дооо*/
+MessageboxW(0, "Hello World!", "Message", 0) /*вызов функций полученых с GetProc*/
 
 yar a, b, c = 1, true, "Hello!"
 yar d = void /*Вместо nil или null у меня void*/
@@ -70,8 +73,6 @@ yar instance = new NewStruct{
 7)tonum(str: string) -> number
 8)gettype(v: any) -> string
 9)tochar(v: number(byte)) -> string(character)
-10)syscallnt(v: string, args: [any]) -> number(pointer), number(pointer), error
-10)kernelcall(v: string, args: [any]) -> number(pointer), number(pointer), error
-11)string(t: [number(byte)]) -> string
-12)closehandle(n: number(pointer)) -> error
+10)string(t: [number(byte)]) -> string
+11)closehandle(n: number(pointer)) -> error
 */
