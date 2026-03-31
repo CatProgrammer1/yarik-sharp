@@ -39,18 +39,6 @@ var (
 			return nil
 		},
 
-		"lockOSThread": func(v ...any) []any {
-			runtime.LockOSThread()
-
-			return nil
-		},
-
-		"unlockOSThread": func(v ...any) []any {
-			runtime.UnlockOSThread()
-
-			return nil
-		},
-
 		"sleep": func(v ...any) []any {
 			x, y := v[0].(int), v[1].(int)
 
@@ -362,8 +350,10 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
 	case float64:
 		return uintptr(math.Float64bits(val)), val
-	case int64:
-		return uintptr(val), val
+	case float32:
+		return uintptr(math.Float32bits(val)), val
+	case int64, int32, int16, int8:
+		return uintptr(toInt64(val)), val
 	case uintptr:
 		return val, nil
 	case unsafe.Pointer:
@@ -407,8 +397,6 @@ func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]
 	//println("debug 2 ended")
 
 	//println("debug 3", addr, node)
-
-	
 
 	r1, r2, err := syscall.SyscallN(addr, params...)
 	runtime.KeepAlive(params)

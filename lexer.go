@@ -53,6 +53,7 @@ var (
 		"*": "mul",
 		"|": "bitor",
 		"&": "getptr",
+		">>": "valbits",
 
 		"->": "indexstruct",
 

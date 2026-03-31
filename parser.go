@@ -12,12 +12,13 @@ const (
 
 var (
 	tokenTypesExpects = map[string][]string{
-		"int,float,ident,string,bool,nil,openbracket,opensqbrac,newstruct": {"openbracket", "asserttype", "opensqbrac", "add", "bitor", "sub", "div", "mul", "pow",
+		"int,float,ident,string,bool,nil,openbracket,opensqbrac,newstruct": {"openbracket", "asserttype", "valbits", "opensqbrac", "add", "bitor", "sub", "div", "mul", "pow",
 			"equals", "notequals", "greater", "less", "greatereq", "lesseq", "and", "or", "indexstruct"},
-		"add,sub,div,mul,pow,equals,notequals,greater,less,greatereq,lesseq,bitor,and,or,return,getptr": {"int", "float", "ident", "string", "bool", "openbracket", "nil"},
+		"add,sub,div,mul,pow,equals,notequals,greater,less,greatereq,lesseq,bitor,and,or,return,getptr,valbits": {"sub", "int", "float", "ident", "string", "bool", "openbracket", "nil"},
 		"opensqbrac,getptr": {"opensqbrac"},
 	}
 	binOpsList = []string{
+		"valbits",
 		"add", "sub", "div", "mul", "pow",
 		"equals", "notequals", "greater", "less", "greatereq", "lesseq",
 		"bitor",
@@ -464,7 +465,8 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 		parser.Next()
 
 		return nodes
-	case "add", "sub", "div", "mul", "pow",
+	case "valbits",
+		"add", "sub", "div", "mul", "pow",
 		"equals", "notequals", "greater", "less", "greatereq", "lesseq",
 		"bitor",
 		"and", "or":
@@ -472,11 +474,11 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 		if lastNode == nil {
 			if currentToken.Type == "sub" {
 				parser.Next()
-				return append(nodes, &BinOpNode{
+				return appendDataType(&BinOpNode{
 					operator: currentToken.Type,
 					X:        x,
 					Y:        y,
-				})
+				}, nodes)
 			}
 			throw("Expected left operand for '%s' binary operation got nothing.", x, y, currentToken.Type)
 		} else {
@@ -488,6 +490,26 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 
 			switch node := lastNode.(type) {
 			case *BinOpNode:
+				switch binOpNode.operator {
+				case "valbits":
+					lastROp := getLastRightOperand(node)
+
+					binOpNode.L = lastROp
+
+					setLastRightOperand(node, binOpNode)
+					parser.Next()
+
+					return nodes
+				case "sub":
+					lastROp := getLastRightOperand(node)
+					if lastROp == nil {
+						setLastRightOperand(node, binOpNode)
+						parser.Next()
+
+						return nodes
+					}
+				}
+
 				switch node.operator {
 				case "mul", "div", "pow", "bitor":
 					binOpNode.L = node

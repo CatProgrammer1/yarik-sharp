@@ -95,10 +95,18 @@ func getValueType(v any) string {
 		return "void"
 	case string:
 		return "string"
+	case float32:
+		return "float32"
 	case float64:
 		return "float"
 	case int64:
 		return "int"
+	case int, int32:
+		return "int32"
+	case int16:
+		return "int16"
+	case int8:
+		return "int8"
 	case bool:
 		return "bool"
 	case *Map:
@@ -114,6 +122,7 @@ func getValueType(v any) string {
 	case error:
 		return "error"
 	}
+	fmt.Printf("%T\n", v)
 	return "any"
 }
 
@@ -134,7 +143,7 @@ func checkDataType(expected string, v any) bool {
 		return false
 	case "number":
 		switch v.(type) {
-		case int64, float64:
+		case int64, float64, float32, int32, int16, int8, uint8, uint16, uint32, uint64:
 			return true
 		}
 

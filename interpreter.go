@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -20,15 +19,15 @@ import (
 )
 
 var (
-	externalCallingChan = make(chan ExternalTask, 1024)
+	externalCallingChan = make(chan ExternalTask, 2048)
+
+	externalCallFinished = make(chan ExternalTaskResult, 100)
 )
 
 type ExternalTask struct {
 	Addr uintptr
 
 	ArgsValues [][]Node
-
-	ResultChan chan ExternalTaskResult
 
 	FuncCall *FuncCall
 }
@@ -59,6 +58,8 @@ type Cell struct {
 	PtrValue      uintptr
 	ErrorValue    error
 
+	Bits uint8 //Shouldn't be used anywhere except *Cell structure methods
+
 	DataType string // int, float, string, bool, struct, instance, table, ptr, func, error, "valueptr"
 	Ptr      unsafe.Pointer
 	TempBuf  any
@@ -71,22 +72,54 @@ func (cell *Cell) Set(value any, nonptr bool) {
 	case int64:
 		cell.IntValue = value
 		cell.DataType = "int"
+		cell.Bits = 64
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.IntValue)
+		}
+	case int32:
+		cell.IntValue = int64(value)
+		cell.DataType = "int"
+		cell.Bits = 32
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.IntValue)
+		}
+	case int16:
+		cell.IntValue = int64(value)
+		cell.DataType = "int"
+		cell.Bits = 32
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.IntValue)
+		}
+	case int8:
+		cell.IntValue = int64(value)
+		cell.DataType = "int"
+		cell.Bits = 32
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(&cell.IntValue)
 		}
 	case float64:
 		cell.FloatValue = value
 		cell.DataType = "float"
+		cell.Bits = 64
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.FloatValue)
+		}
+	case float32:
+		cell.FloatValue = float64(value)
+		cell.DataType = "float"
+		cell.Bits = 32
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(&cell.FloatValue)
 		}
 	case bool:
 		cell.BoolValue = value
+		cell.Bits = 0
 		cell.DataType = "bool"
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(&cell.BoolValue)
 		}
 	case string:
+		cell.Bits = 0
 		cell.StringValue = value
 		cell.DataType = "string"
 
@@ -97,6 +130,7 @@ func (cell *Cell) Set(value any, nonptr bool) {
 			cell.Ptr = unsafe.Pointer(ptr)
 		}
 	case *StructObject:
+		cell.Bits = 0
 		cell.InstanceValue = value
 		cell.DataType = "instance"
 
@@ -104,6 +138,7 @@ func (cell *Cell) Set(value any, nonptr bool) {
 			cell.Ptr = unsafe.Pointer(value.Address())
 		}
 	case *Structure:
+		cell.Bits = 0
 		cell.StructValue = value
 		cell.DataType = "struct"
 
@@ -111,6 +146,7 @@ func (cell *Cell) Set(value any, nonptr bool) {
 			cell.Ptr = unsafe.Pointer(value)
 		}
 	case *FuncDec:
+		cell.Bits = 0
 		cell.FuncValue = value
 		cell.DataType = "func"
 
@@ -118,6 +154,7 @@ func (cell *Cell) Set(value any, nonptr bool) {
 			cell.Ptr = unsafe.Pointer(value)
 		}
 	case *Map:
+		cell.Bits = 0
 		cell.TableValue = value
 		cell.DataType = "table"
 
@@ -127,6 +164,7 @@ func (cell *Cell) Set(value any, nonptr bool) {
 			cell.Ptr = unsafe.Pointer(value.Address())
 		}
 	case unsafe.Pointer:
+		cell.Bits = 64
 		cell.PtrValue = uintptr(value)
 		cell.DataType = "ptr"
 
@@ -134,12 +172,14 @@ func (cell *Cell) Set(value any, nonptr bool) {
 			cell.Ptr = unsafe.Pointer(&cell.PtrValue)
 		}
 	case uintptr:
+		cell.Bits = 64
 		cell.PtrValue = value
 		cell.DataType = "ptr"
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(&cell.PtrValue)
 		}
 	case error:
+		cell.Bits = 0
 		cell.ErrorValue = value
 		cell.DataType = "error"
 
@@ -147,6 +187,7 @@ func (cell *Cell) Set(value any, nonptr bool) {
 			cell.Ptr = unsafe.Pointer(&cell.ErrorValue)
 		}
 	case nil:
+		cell.Bits = 0
 		cell.DataType = "nil"
 		cell.Ptr = nil
 	default:
@@ -160,7 +201,12 @@ func (cell *Cell) Get() any {
 	switch cell.DataType {
 	case "int":
 		return cell.IntValue
+	case "int32, int16, int8":
+		return toInt(cell.IntValue, -int(cell.Bits))
 	case "float":
+		if cell.Bits == 32 {
+			return float32(cell.FloatValue)
+		}
 		return cell.FloatValue
 	case "bool":
 		return cell.BoolValue
@@ -549,6 +595,7 @@ func (scope *Scope) GetWithAddress(ptr unsafe.Pointer) any {
 func (scope *Scope) GetCellWithAddress(ptr unsafe.Pointer) *Cell {
 	v, ok := scope.Pointers[ptr]
 	if ok {
+
 		return v
 	} else if scope.Parent != nil {
 		return scope.Parent.GetCellWithAddress(ptr)
@@ -853,8 +900,16 @@ func toInt64(v any) int64 {
 	case uint32:
 		return int64(val)
 	case int64:
-		return int64(val)
+		return val
 	case uint64:
+		return int64(val)
+	case int16:
+		return int64(val)
+	case uint16:
+		return int64(val)
+	case int8:
+		return int64(val)
+	case uint8:
 		return int64(val)
 	case unsafe.Pointer:
 		return int64(uintptr(val))
@@ -1212,15 +1267,29 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 
 		rtype := checkDataType("number", value)
 		if rtype {
-			result := -mustNTOF64(value)
-
-			return result
+			switch value := value.(type) {
+			case int64:
+				return -value
+			case int32:
+				return -value
+			case int16:
+				return -value
+			case int8:
+				return -value
+			case float64:
+				return -value
+			case float32:
+				return -value
+			}
 		}
+		println(value)
+		fmt.Printf("%T\n", value)
 		throw("Unable to use unary operator '-' on non-number value.", node.X, node.Y)
 	}
 
 	err := "Cannot perform binary operations on multiple values at the same time."
 
+	//fmt.Println(node.operator, node.L, node.R)
 	l, r := inter.GetNodeValue(node.L), inter.GetNodeValue(node.R)
 
 	returnL, ok := l.([]any)
@@ -1282,7 +1351,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 	case *FuncDec:
 		return node
 	case *FuncCall:
-		return inter.CallFunction(node, false)
+		return inter.CallFunction(node)
 	case *IdentNode:
 		v, found := inter.CurrentScope.Get(node.Value)
 		if !found {
@@ -1605,7 +1674,7 @@ func (inter *Interpreter) Current(scope *Scope) {
 	inter.CurrentScope = scope
 }
 
-func (inter *Interpreter) CallFunction(node *FuncCall, noReturnNeeded bool) []any {
+func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 	funcDecInterface := inter.GetNodeValue(node.Func)
 
 	switch funcDec := funcDecInterface.(type) {
@@ -1615,33 +1684,19 @@ func (inter *Interpreter) CallFunction(node *FuncCall, noReturnNeeded bool) []an
 			argsValues = append(argsValues, []Node{argNode})
 		}
 
-		var resultChan chan ExternalTaskResult
-
 		task := ExternalTask{
 			Addr: funcDec,
 
 			ArgsValues: argsValues,
 
-			ResultChan: nil,
-
 			FuncCall: node,
 		}
 
-		if !noReturnNeeded {
-			resultChan = make(chan ExternalTaskResult, 1)
-
-			task.ResultChan = resultChan
-		}
-
 		externalCallingChan <- task
-		if !noReturnNeeded {
-			result := <-resultChan
-			close(resultChan)
-			return []any{result.R1, result.R2, error(result.Error)}
-		}
 
-		//r1, r2, err := syscallAddress(inter, node, uint(len(node.Arguments)), argsValues, funcDec)
-		return nil
+		result := <-externalCallFinished
+
+		return []any{result.R1, result.R2, error(result.Error)}
 	case *FuncDec:
 		if funcDec.Template != nil {
 			args := []any{node.X, node.Y, inter}
@@ -2050,7 +2105,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 
 		cellOfPtr.Set(newValue, false)
 	case *FuncCall:
-		inter.CallFunction(node, true)
+		inter.GetNodeValue(node)
 	case *SetElem:
 		inter.SetElementValue(node)
 	case *IfStmt:
@@ -2167,23 +2222,15 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 }
 
 func (inter *Interpreter) Complete(logenv bool) map[any]*Cell { //go run yks run test.yks
-	defer func() {
-		r := recover()
-		if r != nil {
-			log.Fatalln(r)
-		}
-	}()
-
 	go func() {
 		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
 
 		for externalTaskArgs := range externalCallingChan {
 			r1, r2, err := syscallAddress(inter, externalTaskArgs.FuncCall, uint(len(externalTaskArgs.FuncCall.Arguments)), externalTaskArgs.ArgsValues, externalTaskArgs.Addr)
 
-			if externalTaskArgs.ResultChan != nil {
-				externalTaskArgs.ResultChan <- ExternalTaskResult{
-					r1, r2, err,
-				}
+			externalCallFinished <- ExternalTaskResult{
+				r1, r2, err,
 			}
 		}
 	}()

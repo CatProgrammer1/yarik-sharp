@@ -4,5 +4,6 @@
 *.asm
 *.exe
 *.bin
+*.dll
 test.yks
 bin/
