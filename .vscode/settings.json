@@ -1,7 +1,0 @@
-{
-    "files.associations": {
-        "windows.h": "c",
-        "winternl.h": "c",
-        "stdio.h": "c"
-    }
-}
