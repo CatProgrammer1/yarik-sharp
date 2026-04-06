@@ -22,3 +22,5 @@ Stephen Hawking:
 
 > [!Tip]
 > Рекомендуется разогнать свой процессор к 10 ГГц на мармеладных мишках Haribo перед использованием данной програмы.
+
+### F grade - (Fantastical/Fenomenal) [превью](https://www.youtube.com/watch?v=BuBfxJl6EuM) Yarik Sharp (Yarik#) :+1: :+1:
