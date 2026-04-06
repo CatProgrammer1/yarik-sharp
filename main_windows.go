@@ -322,7 +322,7 @@ func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 
 func outputTokens(tokens []Token) {
 	for k, token := range tokens {
-		fmt.Printf("%d)'%s' - %s: %d,%d\n", k, fmt.Sprint(token.Value), token.Type, token.Line, token.Position)
+		fmt.Printf("%d)'%s' - %s: %d,%d\n", k+1, fmt.Sprint(token.Value), token.Type, token.Line, token.Position)
 	}
 }
 

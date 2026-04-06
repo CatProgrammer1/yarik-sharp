@@ -269,10 +269,10 @@ type Map struct {
 func anyToBytes(v []any, m *Map) []byte {
 	buf := new(bytes.Buffer)
 
-	m.Layout = []string{}
-	m.Pointers = []any{}
+	m.Layout = make([]string, len(v))
+	m.Pointers = make([]any, len(v))
 
-	for _, x := range v {
+	for i, x := range v {
 		switch t := x.(type) {
 		case int64:
 			prefix := "u"
@@ -283,15 +283,15 @@ func anyToBytes(v []any, m *Map) []byte {
 				}
 				layout = prefix + layout + numtostr(int64(math.Abs(float64(m.Bits))))
 
-				m.Layout = append(m.Layout, layout)
-				m.Pointers = append(m.Pointers, nil)
+				m.Layout[i] = layout
+				m.Pointers[i] = nil
 
 				binary.Write(buf, binary.LittleEndian, toInt(t, int(m.Bits)))
 				break
 			}
 
-			m.Layout = append(m.Layout, layout)
-			m.Pointers = append(m.Pointers, nil)
+			m.Layout[i] = layout
+			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, t)
 		case float64:
@@ -299,57 +299,57 @@ func anyToBytes(v []any, m *Map) []byte {
 			if m.Bits != 0 {
 				layout = "int" + numtostr(m.Bits)
 
-				m.Layout = append(m.Layout, layout)
-				m.Pointers = append(m.Pointers, nil)
+				m.Layout[i] = layout
+				m.Pointers[i] = nil
 
 				binary.Write(buf, binary.LittleEndian, ftoInt(t, int(m.Bits)))
 				break
 			}
 
-			m.Layout = append(m.Layout, layout)
-			m.Pointers = append(m.Pointers, nil)
+			m.Layout[i] = layout
+			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, t)
 		case bool:
-			m.Layout = append(m.Layout, "bool")
-			m.Pointers = append(m.Pointers, nil)
+			m.Layout[i] = "bool"
+			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, t)
 		case string:
-			m.Layout = append(m.Layout, "string")
-			m.Pointers = append(m.Pointers, nil)
+			m.Layout[i] = "string"
+			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, append([]byte(t), 0))
 		case error:
-			m.Layout = append(m.Layout, "error")
-			m.Pointers = append(m.Pointers, nil)
+			m.Layout[i] = "error"
+			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, append([]byte(t.Error()), 0))
 		case uintptr:
-			m.Layout = append(m.Layout, "ptr")
-			m.Pointers = append(m.Pointers, nil)
+			m.Layout[i] = "error"
+			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, uint64(t))
 		case unsafe.Pointer:
-			m.Layout = append(m.Layout, "ptr")
-			m.Pointers = append(m.Pointers, nil)
+			m.Layout[i] = "ptr"
+			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, uint64(uintptr(t)))
 		case *Map:
-			m.Layout = append(m.Layout, "table")
-			m.Pointers = append(m.Pointers, t)
+			m.Layout[i] = "table"
+			m.Pointers[i] = t
 
 			binary.Write(buf, binary.LittleEndian, uint32(len(t.Mem)))
 			buf.Write(t.Mem)
 		case *StructObject:
-			m.Layout = append(m.Layout, "instance")
-			m.Pointers = append(m.Pointers, t)
+			m.Layout[i] = "instance"
+			m.Pointers[i] = t
 
 			binary.Write(buf, binary.LittleEndian, uint32(len(t.LastMem)))
 			buf.Write(t.LastMem)
 		case nil:
-			m.Layout = append(m.Layout, "uint")
-			m.Pointers = append(m.Pointers, nil)
+			m.Layout[i] = "uint"
+			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, 0)
 		default:
@@ -361,7 +361,7 @@ func anyToBytes(v []any, m *Map) []byte {
 }
 
 func bytesToAny(mem []byte, layout []string, pointers []any) []any {
-	var res []any
+	res := make([]any, len(layout))
 	r := bytes.NewReader(mem)
 
 	for i, t := range layout {
@@ -382,64 +382,64 @@ func bytesToAny(mem []byte, layout []string, pointers []any) []any {
 			}
 
 			m.Mem = b
-			res = append(res, m)
+			res[i] = m
 		case "int", "int64":
 			var v int64
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res = append(res, v)
+			res[i] = v
 		case "int32":
 			var v int32
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res = append(res, int64(v))
+			res[i] = int64(v)
 		case "int16":
 			var v int16
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res = append(res, int64(v))
+			res[i] = int64(v)
 		case "int8":
 			var v int8
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res = append(res, int64(v))
+			res[i] = int64(v)
 		//Unsigned!
 		case "uint":
 			var v uint64
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res = append(res, int64(v))
+			res[i] = int64(v)
 		case "uint32":
 			var v uint32
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res = append(res, int64(v))
+			res[i] = int64(v)
 		case "uint16":
 			var v uint16
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res = append(res, int64(v))
+			res[i] = int64(v)
 		case "uint8":
 			var v uint8
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res = append(res, int64(v))
+			res[i] = int64(v)
 		case "ptr", "uint64":
 			var v uint64
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res = append(res, uintptr(v))
+			res[i] = uintptr(v)
 		//Unsigned end!
 		case "float":
 			var v float64
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res = append(res, v)
+			res[i] = v
 		case "bool":
 			var b byte
 			binary.Read(r, binary.LittleEndian, &b)
 
-			res = append(res, b != 0)
+			res[i] = b != 0
 		case "string":
 			var ln uint32
 			handle(binary.Read(r, binary.LittleEndian, &ln))
@@ -448,7 +448,7 @@ func bytesToAny(mem []byte, layout []string, pointers []any) []any {
 			_, err := r.Read(b)
 			handle(err)
 
-			res = append(res, string(b))
+			res[i] = string(b)
 		case "error":
 			var ln uint32
 			handle(binary.Read(r, binary.LittleEndian, &ln))
@@ -457,7 +457,7 @@ func bytesToAny(mem []byte, layout []string, pointers []any) []any {
 			_, err := r.Read(b)
 			handle(err)
 
-			res = append(res, errors.New(string(b)))
+			res[i] = errors.New(string(b))
 		default:
 			panic("Unsupported type: " + t)
 		}
@@ -962,9 +962,10 @@ func alignf(offset, alignment uintptr) uintptr {
 }
 
 func (s *StructObject) Layout() []FieldLayout {
-	layout := make([]FieldLayout, 0, len(s.Fields))
+	layout := make([]FieldLayout, len(s.Fields))
 	offset := uintptr(0)
 
+	i := 0
 	for _, field := range s.Fields {
 		var size, align uintptr
 		var typ string
@@ -1011,14 +1012,15 @@ func (s *StructObject) Layout() []FieldLayout {
 
 		offset = alignf(offset, align)
 
-		layout = append(layout, FieldLayout{
+		layout[i] = FieldLayout{
 			Name:   field.Identifier,
 			Offset: offset,
 			Size:   size,
 			Type:   typ,
-		})
+		}
 
 		offset += size
+		i++
 	}
 
 	return layout
@@ -1395,9 +1397,9 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 
 			table := inter.GetNodeValue(tableNode)
 
-			keys := []any{}
-			for _, keyNode := range keyNodes {
-				keys = append(keys, inter.GetNodeValue(keyNode))
+			keys := make([]any, len(keyNodes))
+			for i, keyNode := range keyNodes {
+				keys[i] = inter.GetNodeValue(keyNode)
 			}
 
 			switch table := table.(type) {
@@ -1425,9 +1427,9 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 
 		table := inter.GetNodeValue(tableNode)
 
-		keys := []any{}
-		for _, keyNode := range keyNodes {
-			keys = append(keys, inter.GetNodeValue(keyNode))
+		keys := make([]any, len(keyNodes))
+		for i, keyNode := range keyNodes {
+			keys[i] = inter.GetNodeValue(keyNode)
 		}
 
 		switch table := table.(type) {
@@ -1437,7 +1439,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 			throw("Cannot index non-table or non-string value.", node.X, node.Y)
 		}
 	}
-	throw("Invalid node '%s'.111", node.Position(), node.Line(), getInterfaceType(node))
+	throw("Invalid node '%s'.", node.Position(), node.Line(), getInterfaceType(node))
 	return nil
 }
 
@@ -1620,15 +1622,15 @@ func (inter *Interpreter) GetInstanceFieldCell(getFieldNode *GetFieldNode) *Cell
 		throw("Attempt to get field of a non-structure value.", structObjNode.Position(), structObjNode.Line())
 	}
 
-	fields := []string{}
-	for _, fieldNode := range fieldNodes {
+	fields := make([]string, len(fieldNodes))
+	for i, fieldNode := range fieldNodes {
 
 		fieldIdentNode, ok := fieldNode.(*IdentNode)
 		if !ok {
 			throw("Field name must be an identifier", fieldNode.Position(), fieldNode.Line())
 		}
 
-		fields = append(fields, fieldIdentNode.Value)
+		fields[i] = fieldIdentNode.Value
 	}
 
 	return inter.GetFieldCellByNames(structObj, fields, getFieldNode, 0)
@@ -1679,9 +1681,9 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 
 	switch funcDec := funcDecInterface.(type) {
 	case uintptr:
-		argsValues := [][]Node{}
-		for _, argNode := range node.Arguments {
-			argsValues = append(argsValues, []Node{argNode})
+		argsValues := make([][]Node, len(node.Arguments))
+		for i, argNode := range node.Arguments {
+			argsValues[i] = []Node{argNode}
 		}
 
 		task := ExternalTask{
@@ -1701,39 +1703,40 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 		if funcDec.Template != nil {
 			args := []any{node.X, node.Y, inter}
 
-			argsValues := [][]Node{}
-			for _, argNode := range node.Arguments {
-				argsValues = append(argsValues, []Node{argNode})
+			argsValues := make([][]Node, len(node.Arguments))
+			for i, argNode := range node.Arguments {
+				argsValues[i] = []Node{argNode}
 			}
 
-			return append([]any{}, funcDec.Template(
+			result := funcDec.Template(
 				append(args, inter.CookValues(uint(len(node.Arguments)), argsValues, node.X, node.Y)...)...,
-			)...,
 			)
+
+			return result
 		}
 
 		body := funcDec.Body
-		argsBody := []Node{}
 
 		if len(node.Arguments) > len(funcDec.Arguments) {
 			throw("Attempt to pass more arguments to a function call than function actually need.", node.X, node.Y)
 		}
 
 		argsIdentifiers := funcDec.Arguments //[]IdentNode{}
-		argsValues := [][]Node{}
+		argsValues := make([][]Node, len(node.Arguments))
 
-		for _, argNode := range node.Arguments {
-			//argsIdentifiers = append(argsIdentifiers, funcDec.Arguments[i])
-			argsValues = append(argsValues, []Node{argNode})
+		for i, argNode := range node.Arguments {
+			argsValues[i] = []Node{argNode}
 		}
 
-		argsBody = append(argsBody, &VarDec{
-			Identifier: argsIdentifiers,
-			Value:      argsValues,
-			Argument:   true,
-			X:          node.X,
-			Y:          node.Y,
-		})
+		argsBody := []Node{
+			&VarDec{
+				Identifier: argsIdentifiers,
+				Value:      argsValues,
+				Argument:   true,
+				X:          node.X,
+				Y:          node.Y,
+			},
+		}
 
 		addToScope := [][2]any{}
 
@@ -1772,7 +1775,7 @@ func (inter *Interpreter) CompeleteBody(body []Node, isFunc, isLoop bool, addToS
 			var values []any = nil
 
 			if len(valuesAny) > 0 {
-				values = []any{}
+				values = make([]any, 0, len(valuesAny))
 
 				for _, value := range valuesAny {
 					if (value == ReturnNil{}) {
@@ -1859,8 +1862,8 @@ func (inter *Interpreter) SetElementValue(node *SetElem) {
 	}
 
 	table := inter.GetNodeValue(tableNode)
-	keys := []any{}
-	for _, keyNode := range keyNodes {
+	keys := make([]any, len(keyNodes))
+	for i, keyNode := range keyNodes {
 		key := inter.GetNodeValue(keyNode)
 		if cookedValues, ok := key.([]any); ok {
 			if len(cookedValues) > 1 {
@@ -1872,7 +1875,7 @@ func (inter *Interpreter) SetElementValue(node *SetElem) {
 			key = cookedValues[0]
 		}
 
-		keys = append(keys, key)
+		keys[i] = key
 	}
 
 	value := inter.GetNodeValueS(node.Value, node.X, node.Y)
@@ -1892,9 +1895,9 @@ func (inter *Interpreter) SetFieldValue(node *SetFieldNode) {
 	}
 
 	instance := inter.GetNodeValue(instanceNode)
-	fields := []string{}
-	for _, fieldNode := range fieldNodes {
-		fields = append(fields, fieldNode.(*IdentNode).Value)
+	fields := make([]string, len(fieldNodes))
+	for i, fieldNode := range fieldNodes {
+		fields[i] = fieldNode.(*IdentNode).Value
 	}
 
 	value := inter.GetNodeValueS(node.Value, node.X, node.Y)
@@ -1950,10 +1953,10 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		Identifier: identifier,
 	}
 
-	fields := []*Field{}
-	methods := []*Method{}
+	fields := make([]*Field, len(structObjNode.Fields))
+	methods := make([]*Method, len(originalStructure.Fields))
 
-	for _, fieldDecl := range originalStructure.Fields {
+	for i, fieldDecl := range originalStructure.Fields {
 		if fieldDecl.Func == nil {
 			continue
 		}
@@ -1962,10 +1965,10 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		cell := &Cell{}
 		cell.Set(fieldDecl.Func, false)
 
-		methods = append(methods, &Method{
+		methods[i] = &Method{
 			Identifier: fieldDecl.Identifier,
 			Func:       cell,
-		})
+		}
 	}
 
 	for i, fieldNode := range structObjNode.Fields {
@@ -1996,11 +1999,11 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 
 		bits := originalStructure.Fields[i].Bits
 
-		fields = append(fields, &Field{
+		fields[i] = &Field{
 			Identifier: fieldNode.Identifier.Value,
 			Value:      cell,
 			LayoutType: bits,
-		})
+		}
 	}
 
 	structObject.Fields = fields
@@ -2011,7 +2014,7 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 }
 
 func (inter *Interpreter) CookValues(max_i uint, values [][]Node, x, y int) []any {
-	readyValues := []any{}
+	readyValues := make([]any, 0, len(values))
 
 	for i := uint(0); i < max_i; i++ {
 		if i >= uint(len(values)) {
@@ -2133,18 +2136,6 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 	case *ReturnNode:
 		readyValues := inter.CookValues(uint(len(node.Value)), node.Value, node.X, node.Y)
 
-		/*var returnValue []any = nil
-		if len(node.Value) > 0 {
-			returnValue = []any{}
-			for _, value := range node.Value {
-				if len(value) > 0 {
-					returnValue = append(returnValue, inter.GetNodeValueS(value, node.X, node.Y))
-				} else {
-					returnValue = append(returnValue, ReturnNil{})
-				}
-			}
-		}*/
-
 		return true, false, readyValues
 	case *ExternalImport:
 		if inter.UnableToImport {
@@ -2187,7 +2178,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		}
 		return false, false, nil
 	case *WhileNode:
-		for inter.GetNodeValueS(node.Condition, node.X, node.Y) == true {
+		for cond := inter.GetNodeValueS(node.Condition, node.X, node.Y); cond == true; cond = inter.GetNodeValueS(node.Condition, node.X, node.Y) {
 			end, skip, value := inter.CompeleteBody(node.Body, false, true)
 			if skip {
 				continue
