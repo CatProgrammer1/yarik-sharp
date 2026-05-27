@@ -1268,7 +1268,7 @@ ARGSPAR:
 		default:
 			value := parser.ParseValue()
 
-			if len(value) == 0 && len(value) > 1 {
+			if len(value) == 0 || len(value) > 1 {
 				throw(parser.CurrentFileName, "Argument has more than one value or is empty.", token.Position, token.Line)
 			}
 
