@@ -19,9 +19,9 @@ import (
 )
 
 var (
-	externalCallingChan = make(chan ExternalTask, 2048)
+	externalCallingChan = make(chan ExternalTask, 20048) //Вибачайте, але прийдеться через костилі
 
-	externalCallFinished = make(chan ExternalTaskResult, 100)
+	externalCallFinished = make(chan ExternalTaskResult, 10000)
 )
 
 type ExternalTask struct {
