@@ -27,6 +27,7 @@ var (
 )
 
 type Parser struct {
+	CurrentFileName string
 	CurrentToken    Token
 	LastToken       Token
 	CurrentPosition int
@@ -35,9 +36,10 @@ type Parser struct {
 	Unexpected      []string
 }
 
-func NewParser(tokens []Token) *Parser {
+func NewParser(filename string, tokens []Token) *Parser {
 	return &Parser{
-		Tokens: tokens,
+		CurrentFileName: filename,
+		Tokens:          tokens,
 	}
 }
 
@@ -63,17 +65,17 @@ func (parser *Parser) Next(expectedTokenTypes ...string) {
 
 	currentToken := parser.Tokens[parser.CurrentPosition]
 	if len(parser.Expected) > 0 && !slices.Contains(parser.Expected, currentToken.Type) {
-		throw(EXCEPTION_ERROR, currentToken.Position, currentToken.Line, strings.Join(parser.Expected, ","), currentToken.Type)
+		throw(parser.CurrentFileName, EXCEPTION_ERROR, currentToken.Position, currentToken.Line, strings.Join(parser.Expected, ","), currentToken.Type)
 	}
 	if len(parser.Unexpected) > 0 && slices.Contains(parser.Unexpected, currentToken.Type) {
-		throw(EXCEPTION_ERROR, currentToken.Position, currentToken.Line, strings.Join(parser.Expected, ","), currentToken.Type)
+		throw(parser.CurrentFileName, EXCEPTION_ERROR, currentToken.Position, currentToken.Line, strings.Join(parser.Expected, ","), currentToken.Type)
 	}
 
 	parser.Unexpected = []string{}
 	parser.CurrentToken = currentToken
 
 	if parser.LastToken == parser.CurrentToken {
-		throw(EXCEPTION_ERROR, currentToken.Position, currentToken.Line, strings.Join(parser.Expected, ","), currentToken.Type)
+		throw(parser.CurrentFileName, EXCEPTION_ERROR, currentToken.Position, currentToken.Line, strings.Join(parser.Expected, ","), currentToken.Type)
 	}
 	parser.LastToken = parser.CurrentToken
 }
@@ -433,7 +435,7 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 	case "asserttype":
 		lastNode := getLastNode(nodes)
 		if lastNode == nil {
-			throw(INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, currentToken.Type)
+			throw(parser.CurrentFileName, INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, currentToken.Type)
 		}
 
 		typeAssert := &TypeAssert{
@@ -446,7 +448,7 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 			rightOp := getLastRightOperand(lastNode)
 
 			if rightOp == nil {
-				throw(INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, currentToken.Type)
+				throw(parser.CurrentFileName, INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, currentToken.Type)
 			}
 
 			typeAssert.Target = rightOp
@@ -480,7 +482,7 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 					Y:        y,
 				}, nodes)
 			}
-			throw("Expected left operand for '%s' binary operation got nothing.", x, y, currentToken.Type)
+			throw(parser.CurrentFileName, "Expected left operand for '%s' binary operation got nothing.", x, y, currentToken.Type)
 		} else {
 			binOpNode := &BinOpNode{
 				operator: currentToken.Type,
@@ -659,7 +661,7 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 		return nodes
 	}
 
-	throw(INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, currentToken.Type)
+	throw(parser.CurrentFileName, INVALID_TOKEN_ERROR, currentToken.Position, currentToken.Line, currentToken.Type)
 	return nil
 }
 
@@ -801,7 +803,7 @@ FOREACHPAR:
 			}
 			fallthrough
 		default:
-			throw(INVALID_TOKEN_ERROR, token.Position, token.Line, token.Type)
+			throw(parser.CurrentFileName, INVALID_TOKEN_ERROR, token.Position, token.Line, token.Type)
 		}
 	}
 
@@ -852,7 +854,7 @@ KEYPAR:
 	}
 
 	if len(key) == 0 {
-		throw("Key cannot be empty", 0, mainToken.Position, mainToken.Line)
+		throw(parser.CurrentFileName, "Key cannot be empty", 0, mainToken.Position, mainToken.Line)
 	}
 	return key
 }
@@ -871,7 +873,7 @@ MAPPAR:
 		switch token.Type {
 		case tableKeyValueAssignTokenType:
 			if len(currentValue) > 0 {
-				throw(ELEMENT_COMMA_EXPECTED, token.Position, token.Line)
+				throw(parser.CurrentFileName, ELEMENT_COMMA_EXPECTED, token.Position, token.Line)
 			}
 
 			parser.Unexpect(tableSeparatorTokenType, "closesqbrac")
@@ -880,14 +882,14 @@ MAPPAR:
 
 			currenToken := parser.CurrentToken
 			if currenToken.Type != tableSeparatorTokenType {
-				throw(ELEMENT_COMMA_EXPECTED, currenToken.Position, currenToken.Line)
+				throw(parser.CurrentFileName, ELEMENT_COMMA_EXPECTED, currenToken.Position, currenToken.Line)
 			}
 		case tableSeparatorTokenType:
 			if len(currentKey) > 1 || len(currentKey) == 0 {
-				throw("Key has more than one value or empty.", token.Position, token.Line)
+				throw(parser.CurrentFileName, "Key has more than one value or empty.", token.Position, token.Line)
 			}
 			if len(currentValue) > 1 || len(currentValue) == 0 {
-				throw("Element has more than one value or empty.", token.Position, token.Line)
+				throw(parser.CurrentFileName, "Element has more than one value or empty.", token.Position, token.Line)
 			}
 
 			mapNode.Map = append(mapNode.Map, &Element{
@@ -923,7 +925,7 @@ MAPPAR:
 			switch token.Type {
 			case tableSeparatorTokenType:
 				if len(currentValue) > 0 {
-					throw(ELEMENT_COMMA_EXPECTED, token.Position, token.Line)
+					throw(parser.CurrentFileName, ELEMENT_COMMA_EXPECTED, token.Position, token.Line)
 				}
 
 				currentValue = currentKey
@@ -934,7 +936,7 @@ MAPPAR:
 			case tableKeyValueAssignTokenType:
 				break
 			default:
-				throw("Invalid element separator or value assign token type after the key.", token.Position, token.Line)
+				throw(parser.CurrentFileName, "Invalid element separator or value assign token type after the key.", token.Position, token.Line)
 			}
 		}
 	}
@@ -968,7 +970,7 @@ STRUCTPAR:
 			structure.Fields = parser.ParseNewStructFields()
 			break STRUCTPAR
 		default:
-			throw("Invalid token '%s'.", token.Position, token.Line, parser.Expected, token.Type)
+			throw(parser.CurrentFileName, "Invalid token '%s'.", token.Position, token.Line, parser.Expected, token.Type)
 		}
 	}
 
@@ -1003,7 +1005,7 @@ FIELDS:
 
 			token = parser.CurrentToken
 			if token.Type != tableSeparatorTokenType {
-				throw("Expected '%s' after field value.", token.Position, token.Line, tableSeparatorTokenType)
+				throw(parser.CurrentFileName, "Expected '%s' after field value.", token.Position, token.Line, tableSeparatorTokenType)
 			}
 
 			identifier = IdentNode{}
@@ -1013,7 +1015,7 @@ FIELDS:
 			parser.Next()
 			break FIELDS
 		default:
-			throw("Invalid token '%s'.", token.Position, token.Line, parser.Expected, token.Type)
+			throw(parser.CurrentFileName, "Invalid token '%s'.", token.Position, token.Line, parser.Expected, token.Type)
 		}
 	}
 
@@ -1046,7 +1048,7 @@ STRUCTDECLPAR:
 			structDecl.Fields = parser.ParseStructDeclFields()
 			break STRUCTDECLPAR
 		default:
-			throw("Invalid token '%s'.", token.Position, token.Line, parser.Expected, token.Type)
+			throw(parser.CurrentFileName, "Invalid token '%s'.", token.Position, token.Line, parser.Expected, token.Type)
 		}
 	}
 
@@ -1098,7 +1100,7 @@ FIELDS:
 			parser.Next()
 			break FIELDS
 		default:
-			throw("Invalid token '%s'.", token.Position, token.Line, token.Type)
+			throw(parser.CurrentFileName, "Invalid token '%s'.", token.Position, token.Line, token.Type)
 		}
 	}
 
@@ -1267,7 +1269,7 @@ ARGSPAR:
 			value := parser.ParseValue()
 
 			if len(value) == 0 && len(value) > 1 {
-				throw("Argument has more than one value or is empty.", token.Position, token.Line)
+				throw(parser.CurrentFileName, "Argument has more than one value or is empty.", token.Position, token.Line)
 			}
 
 			args = append(args, value[0])

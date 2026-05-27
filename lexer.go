@@ -46,13 +46,13 @@ var (
 		nilVoid: "nil",
 
 		//operators
-		"=": "assign",
-		"+": "add",
-		"-": "sub",
-		"/": "div",
-		"*": "mul",
-		"|": "bitor",
-		"&": "getptr",
+		"=":  "assign",
+		"+":  "add",
+		"-":  "sub",
+		"/":  "div",
+		"*":  "mul",
+		"|":  "bitor",
+		"&":  "getptr",
 		">>": "valbits",
 
 		"->": "indexstruct",
@@ -128,7 +128,8 @@ func toint(str string) int64 {
 }
 
 type Lexer struct {
-	Source          string
+	CurrentFileName,
+	Source string
 	SourceChar      []rune
 	CurrentPosition int
 	CurrentColumn   int
@@ -136,10 +137,11 @@ type Lexer struct {
 	CurrentChar     rune
 }
 
-func NewLexer(src string) *Lexer {
+func NewLexer(filename string, src string) *Lexer {
 	return &Lexer{
-		Source:     src,
-		SourceChar: []rune(src),
+		CurrentFileName: filename,
+		Source:          src,
+		SourceChar:      []rune(src),
 	}
 }
 
@@ -257,7 +259,7 @@ func (lexer *Lexer) GetTokens() []Token {
 			if !found {
 				ident := lexer.GetIdentifier()
 				if ident.Value == "" {
-					throw("Unknown character '%s'", lexer.CurrentColumn, lexer.CurrentLine, charStr)
+					throw(lexer.CurrentFileName, "Unknown character '%s'", lexer.CurrentColumn, lexer.CurrentLine, charStr)
 				}
 
 				switch ident.Value {
@@ -357,7 +359,7 @@ func (lexer *Lexer) GetString(startChar string) Token {
 
 	for {
 		if lexer.CurrentPosition < 0 {
-			throw("Lox", lexer.CurrentColumn, lexer.CurrentLine)
+			throw(lexer.CurrentFileName, "Lox", lexer.CurrentColumn, lexer.CurrentLine)
 			break
 		}
 		charStr := lexer.Str()
@@ -372,7 +374,7 @@ func (lexer *Lexer) GetString(startChar string) Token {
 				lexer.NextTimes(2)
 				continue
 			} else {
-				throw("Unknown escape sequence", lexer.CurrentColumn, lexer.CurrentLine)
+				throw(lexer.CurrentFileName, "Unknown escape sequence", lexer.CurrentColumn, lexer.CurrentLine)
 			}
 		} else {
 			str += charStr

@@ -38,6 +38,7 @@ type ExternalTaskResult struct {
 }
 
 type Scope struct {
+	Interpreter    *Interpreter
 	Data           map[any]*Cell
 	Pointers       map[unsafe.Pointer]*Cell
 	Parent         *Scope
@@ -123,7 +124,7 @@ func (cell *Cell) Set(value any, nonptr bool) {
 		cell.StringValue = value
 		cell.DataType = "string"
 
-		ptr, buf := valueToPtr(cell.StringValue, 0, 0)
+		ptr, buf := valueToPtr(cell.Scope.Interpreter, cell.StringValue, 0, 0)
 		cell.TempBuf = buf
 
 		if !nonptr {
@@ -504,11 +505,12 @@ var (
 	typeName = regexp.MustCompile(`<\*(?:[^.]+\.)?([^ ]+)`)
 )
 
-func NewScope(parent *Scope) *Scope {
+func NewScope(inter *Interpreter, parent *Scope) *Scope {
 	return &Scope{
-		Data:     make(map[any]*Cell),
-		Pointers: make(map[unsafe.Pointer]*Cell),
-		Parent:   parent,
+		Interpreter: inter,
+		Data:        make(map[any]*Cell),
+		Pointers:    make(map[unsafe.Pointer]*Cell),
+		Parent:      parent,
 	}
 }
 
@@ -556,7 +558,7 @@ func (scope *Scope) Set(key, value any, x, y int) (success bool) {
 	if oldvalue, ok := scope.Data[key]; ok {
 		switch oldvalue.Get().(type) {
 		case *Structure, *FuncDec:
-			throw("Assignment to non-variable value", x, y)
+			throw(scope.Interpreter.CurrentFileName, "Assignment to non-variable value", x, y)
 		}
 
 		cell := scope.Data[key]
@@ -653,6 +655,7 @@ func newInstance(name string, fields []*Field, methods []*Method) *StructObject 
 }
 
 type StructObject struct {
+	scope      *Scope
 	Identifier string
 	Fields     []*Field
 	Methods    []*Method
@@ -1083,10 +1086,11 @@ func (structObj *StructObject) Set(fieldName string, value any) bool {
 			return true
 		}
 	}
+
 	for _, method := range structObj.Methods {
 		if method.Identifier == fieldName {
 			funcDecl := method.Func.Get().(*FuncDec)
-			throw("Cannot assign value to a instance's method.", funcDecl.X, funcDecl.Y)
+			throw(structObj.scope.Interpreter.CurrentFileName, "Cannot assign value to a instance's method.", funcDecl.X, funcDecl.Y)
 		}
 	}
 	return false
@@ -1252,14 +1256,16 @@ func getInterfaceType(v any) string {
 }
 
 type Interpreter struct {
-	AST            []Node
-	CurrentScope   *Scope
-	UnableToImport bool
+	CurrentFileName string
+	AST             []Node
+	CurrentScope    *Scope
+	UnableToImport  bool
 }
 
-func NewInterpreter(ast []Node) *Interpreter {
+func NewInterpreter(filename string, ast []Node) *Interpreter {
 	return &Interpreter{
-		AST: ast,
+		CurrentFileName: filename,
+		AST:             ast,
 	}
 }
 
@@ -1286,7 +1292,7 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 		}
 		println(value)
 		fmt.Printf("%T\n", value)
-		throw("Unable to use unary operator '-' on non-number value.", node.X, node.Y)
+		throw(inter.CurrentFileName, "Unable to use unary operator '-' on non-number value.", node.X, node.Y)
 	}
 
 	err := "Cannot perform binary operations on multiple values at the same time."
@@ -1297,7 +1303,7 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 	returnL, ok := l.([]any)
 	if ok {
 		if len(returnL) > 1 {
-			throw(err, node.X, node.Y)
+			throw(inter.CurrentFileName, err, node.X, node.Y)
 		}
 		l = returnL[0]
 	}
@@ -1305,7 +1311,7 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 	returnR, ok := r.([]any)
 	if ok {
 		if len(returnR) > 1 {
-			throw(err, node.X, node.Y)
+			throw(inter.CurrentFileName, err, node.X, node.Y)
 		}
 		r = returnR[0]
 	}
@@ -1319,7 +1325,7 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 
 	f := binOperations[node.operator]
 
-	return f(l, r, node.X, node.Y)
+	return f(inter, l, r, node.X, node.Y)
 }
 
 func (inter *Interpreter) GetNodeValue(node Node) any {
@@ -1342,7 +1348,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 
 		assertValue, ok := assertType(target, typeName)
 		if !ok {
-			throw("Error occured while tried to assert value type of '%s' to '%s'", node.X, node.Y, getValueType(target), typeName)
+			throw(inter.CurrentFileName, "Error occured while tried to assert value type of '%s' to '%s'", node.X, node.Y, getValueType(target), typeName)
 		}
 
 		return assertValue
@@ -1357,7 +1363,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 	case *IdentNode:
 		v, found := inter.CurrentScope.Get(node.Value)
 		if !found {
-			throw("Variable '%s' doesn't exist", node.X, node.Y, node.Value)
+			throw(inter.CurrentFileName, "Variable '%s' doesn't exist", node.X, node.Y, node.Value)
 		}
 
 		return v
@@ -1365,7 +1371,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 		return inter.NewStructObject(node)
 	case *GetPtrNode:
 		if node.Src == nil {
-			throw("Attempt to get a pointer of nothing.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Attempt to get a pointer of nothing.", node.X, node.Y)
 		}
 		srcNode := node.Src
 
@@ -1377,22 +1383,22 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 
 			cell := scope.GetCell(identifier)
 			if cell == nil {
-				throw("Attempt to get a pointer of non-existing value.", node.X, node.Y)
+				throw(inter.CurrentFileName, "Attempt to get a pointer of non-existing value.", node.X, node.Y)
 			}
 			if cell.Ptr == nil {
-				throw("Attempt to get pointer of nil value.", node.X, node.Y)
+				throw(inter.CurrentFileName, "Attempt to get pointer of nil value.", node.X, node.Y)
 			}
 
 			switch v := cell.Get().(type) {
 			case *FuncDec, *Structure:
-				throw("Cannot get a pointer of %s value", node.X, node.Y, getValueType(v))
+				throw(inter.CurrentFileName, "Cannot get a pointer of %s value", node.X, node.Y, getValueType(v))
 			}
 
 			return uintptr(cell.Ptr)
 		case *GetElementNode:
 			tableNode, keyNodes := inter.GetTableAndKeys(srcNode, []Node{})
 			if tableNode == nil {
-				throw("Attempt to index nothing.", srcNode.X, srcNode.Y)
+				throw(inter.CurrentFileName, "Attempt to index nothing.", srcNode.X, srcNode.Y)
 			}
 
 			table := inter.GetNodeValue(tableNode)
@@ -1408,7 +1414,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 
 				return cell.Ptr
 			default:
-				throw("Cannot index non-table value.", node.X, node.Y)
+				throw(inter.CurrentFileName, "Cannot index non-table value.", node.X, node.Y)
 			}
 		case *GetFieldNode:
 			cell := inter.GetInstanceFieldCell(srcNode)
@@ -1422,7 +1428,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 	case *GetElementNode:
 		tableNode, keyNodes := inter.GetTableAndKeys(node, []Node{})
 		if tableNode == nil {
-			throw("Attempt to index nothing.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Attempt to index nothing.", node.X, node.Y)
 		}
 
 		table := inter.GetNodeValue(tableNode)
@@ -1436,26 +1442,26 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 		case *Map, string:
 			return inter.GetTableValueByKeys(table, keys, node, 0)
 		default:
-			throw("Cannot index non-table or non-string value.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Cannot index non-table or non-string value.", node.X, node.Y)
 		}
 	}
-	throw("Invalid node '%s'.", node.Position(), node.Line(), getInterfaceType(node))
+	throw(inter.CurrentFileName, "Invalid node '%s'.", node.Position(), node.Line(), getInterfaceType(node))
 	return nil
 }
 
 func (inter *Interpreter) GetNodeValueS(nodes []Node, x, y int) any {
 	if len(nodes) > 1 || len(nodes) == 0 {
-		throw("Value has more than one value or is empty", x, y)
+		throw(inter.CurrentFileName, "Value has more than one value or is empty", x, y)
 	}
 	return inter.GetNodeValue(nodes[0])
 }
 
 func (inter *Interpreter) GetTableAndKeys(node *GetElementNode, keys []Node) (Node, []Node) {
 	if len(node.Map) > 1 {
-		throw("Cannot index more than one value at the same time", node.X, node.Y)
+		throw(inter.CurrentFileName, "Cannot index more than one value at the same time", node.X, node.Y)
 	}
 	if len(node.Key) > 1 {
-		throw("Key cannot have more than one value", node.X, node.Y)
+		throw(inter.CurrentFileName, "Key cannot have more than one value", node.X, node.Y)
 	}
 	keys = append(keys, node.Key[0])
 	switch mapNode := node.Map[0].(type) {
@@ -1483,7 +1489,7 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 	case *Map:
 		if !table.Has(key) {
 			if index+1 < len(keys) {
-				throw("Attempt to index non-table value.", getElemN.X, getElemN.Y)
+				throw(inter.CurrentFileName, "Attempt to index non-table value.", getElemN.X, getElemN.Y)
 			} else {
 				return CLPTR(nil).Get()
 			}
@@ -1504,10 +1510,10 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 		if ok {
 			i := int(key)
 			if i >= len(table) || i < 0 {
-				throw("Attempt to index a character beyond the string limit.", getElemN.X, getElemN.Y)
+				throw(inter.CurrentFileName, "Attempt to index a character beyond the string limit.", getElemN.X, getElemN.Y)
 			}
 			if index+1 != len(keys) {
-				throw("Repeated indexing of a character is not allowed.", getElemN.X, getElemN.Y)
+				throw(inter.CurrentFileName, "Repeated indexing of a character is not allowed.", getElemN.X, getElemN.Y)
 			}
 
 			char := string([]rune(table)[i])
@@ -1515,7 +1521,7 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 			return char
 		}
 	}
-	throw("Attempt to index non-table value.", getElemN.X, getElemN.Y)
+	throw(inter.CurrentFileName, "Attempt to index non-table value.", getElemN.X, getElemN.Y)
 	return nil
 }
 
@@ -1530,7 +1536,7 @@ func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *Ge
 	case *Map:
 		if !table.Has(key) {
 			if index+1 < len(keys) {
-				throw("Attempt to index non-table value.", getElemN.X, getElemN.Y)
+				throw(inter.CurrentFileName, "Attempt to index non-table value.", getElemN.X, getElemN.Y)
 			} else {
 				return CLPTR(nil)
 			}
@@ -1547,13 +1553,13 @@ func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *Ge
 		}
 		return val
 	}
-	throw("Attempt to index non-table value.", getElemN.X, getElemN.Y)
+	throw(inter.CurrentFileName, "Attempt to index non-table value.", getElemN.X, getElemN.Y)
 	return nil
 }
 
 func (inter *Interpreter) GetStructAndFieldNames(node *GetFieldNode, fields []Node) (Node, []Node) {
 	if len(node.Field) > 1 {
-		throw("Cannot get value of more than one field at the same time.", node.X, node.Y)
+		throw(inter.CurrentFileName, "Cannot get value of more than one field at the same time.", node.X, node.Y)
 	}
 	fields = append(fields, node.Field[0])
 	switch structNode := node.Struct.(type) {
@@ -1574,13 +1580,13 @@ func (inter *Interpreter) GetFieldValueByNames(structObj *StructObject, fieldNam
 
 	val, ok := structObj.Get(fieldName)
 	if !ok {
-		throw("Attempt to get a value of nonexistent field '%s'", getFieldN.X, getFieldN.Y, fieldName)
+		throw(inter.CurrentFileName, "Attempt to get a value of nonexistent field '%s'", getFieldN.X, getFieldN.Y, fieldName)
 	}
 
 	if index+1 < len(fieldNames) {
 		nextStructObj, ok := val.(*StructObject)
 		if !ok {
-			throw("Attempt to get field of a non-structure value", getFieldN.X, getFieldN.Y)
+			throw(inter.CurrentFileName, "Attempt to get field of a non-structure value", getFieldN.X, getFieldN.Y)
 		}
 
 		return inter.GetFieldValueByNames(nextStructObj, fieldNames, getFieldN, index+1)
@@ -1597,13 +1603,13 @@ func (inter *Interpreter) GetFieldCellByNames(structObj *StructObject, fieldName
 
 	val, ok := structObj.GetCell(fieldName)
 	if !ok {
-		throw("Attempt to get a value of nonexistent field '%s'", getFieldN.X, getFieldN.Y, fieldName)
+		throw(inter.CurrentFileName, "Attempt to get a value of nonexistent field '%s'", getFieldN.X, getFieldN.Y, fieldName)
 	}
 
 	if index+1 < len(fieldNames) {
 		nextStructObj, ok := val.Get().(*StructObject)
 		if !ok {
-			throw("Attempt to get field of a non-structure value", getFieldN.X, getFieldN.Y)
+			throw(inter.CurrentFileName, "Attempt to get field of a non-structure value", getFieldN.X, getFieldN.Y)
 		}
 
 		return inter.GetFieldCellByNames(nextStructObj, fieldNames, getFieldN, index+1)
@@ -1614,12 +1620,12 @@ func (inter *Interpreter) GetFieldCellByNames(structObj *StructObject, fieldName
 func (inter *Interpreter) GetInstanceFieldCell(getFieldNode *GetFieldNode) *Cell {
 	structObjNode, fieldNodes := inter.GetStructAndFieldNames(getFieldNode, []Node{})
 	if structObjNode == nil {
-		throw("Attempt to get field of nothing.", getFieldNode.X, getFieldNode.Y)
+		throw(inter.CurrentFileName, "Attempt to get field of nothing.", getFieldNode.X, getFieldNode.Y)
 	}
 
 	structObj, ok := inter.GetNodeValue(structObjNode).(*StructObject)
 	if !ok {
-		throw("Attempt to get field of a non-structure value.", structObjNode.Position(), structObjNode.Line())
+		throw(inter.CurrentFileName, "Attempt to get field of a non-structure value.", structObjNode.Position(), structObjNode.Line())
 	}
 
 	fields := make([]string, len(fieldNodes))
@@ -1627,7 +1633,7 @@ func (inter *Interpreter) GetInstanceFieldCell(getFieldNode *GetFieldNode) *Cell
 
 		fieldIdentNode, ok := fieldNode.(*IdentNode)
 		if !ok {
-			throw("Field name must be an identifier", fieldNode.Position(), fieldNode.Line())
+			throw(inter.CurrentFileName, "Field name must be an identifier", fieldNode.Position(), fieldNode.Line())
 		}
 
 		fields[i] = fieldIdentNode.Value
@@ -1645,9 +1651,9 @@ func (inter *Interpreter) GetMap(node *MapNode) *Map {
 		values, ok := value.([]any)
 		if ok {
 			if len(values) > 1 {
-				throw("Field cannot have more than one value.", element.X, element.Y)
+				throw(inter.CurrentFileName, "Field cannot have more than one value.", element.X, element.Y)
 			} else if len(values) == 0 {
-				throw("Cannot assign a field cannot be an empty value.", element.X, element.Y)
+				throw(inter.CurrentFileName, "Cannot assign a field cannot be an empty value.", element.X, element.Y)
 			}
 
 			m.Set(key, CLPTR(values[0]))
@@ -1660,7 +1666,7 @@ func (inter *Interpreter) GetMap(node *MapNode) *Map {
 	if node.Bits != nil {
 		bits, ok := inter.GetNodeValueS(node.Bits, node.X, node.Y).(int64)
 		if !ok {
-			throw("Bits amount must be an integer value.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Bits amount must be an integer value.", node.X, node.Y)
 		}
 
 		b = int8(bits)
@@ -1718,7 +1724,7 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 		body := funcDec.Body
 
 		if len(node.Arguments) > len(funcDec.Arguments) {
-			throw("Attempt to pass more arguments to a function call than function actually need.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Attempt to pass more arguments to a function call than function actually need.", node.X, node.Y)
 		}
 
 		argsIdentifiers := funcDec.Arguments //[]IdentNode{}
@@ -1749,13 +1755,13 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 
 		return value
 	default:
-		throw("Attempt to call a non-function object.", node.X, node.Y)
+		throw(inter.CurrentFileName, "Attempt to call a non-function object.", node.X, node.Y)
 		return nil
 	}
 }
 
 func (inter *Interpreter) CompeleteBody(body []Node, isFunc, isLoop bool, addToScope ...[2]any) (end, skip bool, value []any) {
-	scope := NewScope(inter.CurrentScope)
+	scope := NewScope(inter, inter.CurrentScope)
 	scope.IsFunc = isFunc
 	scope.IsLoop = isLoop
 
@@ -1858,7 +1864,7 @@ func (inter *Interpreter) ScopeIsLoop(scope *Scope) bool {
 func (inter *Interpreter) SetElementValue(node *SetElem) {
 	tableNode, keyNodes := inter.GetTableAndKeys(node.Elem, []Node{})
 	if tableNode == nil {
-		throw("Attempt to index nothing", node.X, node.Y)
+		throw(inter.CurrentFileName, "Attempt to index nothing", node.X, node.Y)
 	}
 
 	table := inter.GetNodeValue(tableNode)
@@ -1867,9 +1873,9 @@ func (inter *Interpreter) SetElementValue(node *SetElem) {
 		key := inter.GetNodeValue(keyNode)
 		if cookedValues, ok := key.([]any); ok {
 			if len(cookedValues) > 1 {
-				throw("Element's key cannot have more than one value.", tableNode.Position(), tableNode.Line())
+				throw(inter.CurrentFileName, "Element's key cannot have more than one value.", tableNode.Position(), tableNode.Line())
 			} else if len(cookedValues) == 0 {
-				throw("Cannot assign an element's key an empty value.", tableNode.Position(), tableNode.Line())
+				throw(inter.CurrentFileName, "Cannot assign an element's key an empty value.", tableNode.Position(), tableNode.Line())
 			}
 
 			key = cookedValues[0]
@@ -1884,14 +1890,14 @@ func (inter *Interpreter) SetElementValue(node *SetElem) {
 	case *Map:
 		inter.SetTableElementValue(table, keys, value, 0)
 	default:
-		throw("Cannot index non-table value", node.X, node.Y)
+		throw(inter.CurrentFileName, "Cannot index non-table value", node.X, node.Y)
 	}
 }
 
 func (inter *Interpreter) SetFieldValue(node *SetFieldNode) {
 	instanceNode, fieldNodes := inter.GetStructAndFieldNames(node.Field, []Node{})
 	if instanceNode == nil {
-		throw("Attempt to index nothing", node.X, node.Y)
+		throw(inter.CurrentFileName, "Attempt to index nothing", node.X, node.Y)
 	}
 
 	instance := inter.GetNodeValue(instanceNode)
@@ -1906,7 +1912,7 @@ func (inter *Interpreter) SetFieldValue(node *SetFieldNode) {
 	case *StructObject:
 		inter.SetInstanceFieldValue(instance, fields, value, 0)
 	default:
-		throw("Cannot assign field of non-instance value", node.X, node.Y)
+		throw(inter.CurrentFileName, "Cannot assign field of non-instance value", node.X, node.Y)
 	}
 }
 
@@ -1932,7 +1938,7 @@ func (inter *Interpreter) DeclareStructure(structDecl *StructDeclNode) {
 		Identifier: identifier,
 		Fields:     fields,
 	}) {
-		throw("Attempt to declare the structure with the same name as the variable '%s'.", structDecl.X, structDecl.Y, identifier)
+		throw(inter.CurrentFileName, "Attempt to declare the structure with the same name as the variable '%s'.", structDecl.X, structDecl.Y, identifier)
 	}
 }
 
@@ -1941,12 +1947,12 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 
 	originalStructureAny, found := inter.CurrentScope.Get(identifier)
 	if !found {
-		throw("Attempt to make an instance of structure '%s' that doesn't exist", structObjNode.X, structObjNode.Y, structObjNode.Identifier.Value)
+		throw(inter.CurrentFileName, "Attempt to make an instance of structure '%s' that doesn't exist", structObjNode.X, structObjNode.Y, structObjNode.Identifier.Value)
 	}
 
 	originalStructure, ok := originalStructureAny.(*Structure)
 	if originalStructure == nil || !ok {
-		throw("Attempt to make an instance of a nonexistent structure '%s'.", structObjNode.X, structObjNode.Y, identifier)
+		throw(inter.CurrentFileName, "Attempt to make an instance of a nonexistent structure '%s'.", structObjNode.X, structObjNode.Y, identifier)
 	}
 
 	structObject := &StructObject{
@@ -1974,10 +1980,10 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 	for i, fieldNode := range structObjNode.Fields {
 		fieldName := fieldNode.Identifier.Value
 		if !originalStructure.CheckField(fieldName) {
-			throw("Attempt to assign a nonexistent field '%s' of structure '%s' while trying to make an instance.", structObjNode.X, structObjNode.Y, fieldName, identifier)
+			throw(inter.CurrentFileName, "Attempt to assign a nonexistent field '%s' of structure '%s' while trying to make an instance.", structObjNode.X, structObjNode.Y, fieldName, identifier)
 		}
 		if originalStructure.IsAFunc(fieldName) {
-			throw("Attempt to assign a value for a method '%s' of structure '%s'.", structObjNode.X, structObjNode.Y, fieldName, identifier)
+			throw(inter.CurrentFileName, "Attempt to assign a value for a method '%s' of structure '%s'.", structObjNode.X, structObjNode.Y, fieldName, identifier)
 		}
 
 		v := inter.GetNodeValueS(fieldNode.Value, fieldNode.Identifier.X, fieldNode.Identifier.Y)
@@ -1987,9 +1993,9 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		switch v := v.(type) {
 		case []any:
 			if len(v) > 1 {
-				throw("Field cannot have more than one value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
+				throw(inter.CurrentFileName, "Field cannot have more than one value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
 			} else if len(v) == 0 {
-				throw("Cannot assign a field an empty value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
+				throw(inter.CurrentFileName, "Cannot assign a field an empty value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
 			}
 
 			cell.Set(v[0], false)
@@ -2046,10 +2052,10 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 	switch node := node.(type) {
 	case *FuncDec:
 		if len(node.Identifier.Value) == 0 {
-			throw("Name of the function cannot be empty.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Name of the function cannot be empty.", node.X, node.Y)
 		}
 		if !inter.CurrentScope.Add(node.Identifier.Value, node) {
-			throw("Attempt to redeclare a variable '%s'.", node.X, node.Y, node.Identifier.Value)
+			throw(inter.CurrentFileName, "Attempt to redeclare a variable '%s'.", node.X, node.Y, node.Identifier.Value)
 		}
 	case *StructDeclNode:
 		inter.DeclareStructure(node)
@@ -2057,28 +2063,28 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		readyValues := inter.CookValues(uint(len(node.Identifier)), node.Value, node.X, node.Y)
 
 		if len(readyValues) > len(node.Identifier) && !node.Argument {
-			throw("Too many values(%d) for %d identifier(s).", node.X, node.Y, len(readyValues), len(node.Identifier))
+			throw(inter.CurrentFileName, "Too many values(%d) for %d identifier(s).", node.X, node.Y, len(readyValues), len(node.Identifier))
 		} else if len(readyValues) > len(node.Identifier) && node.Argument {
-			throw("Attempt to use multiple values as a single argument.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Attempt to use multiple values as a single argument.", node.X, node.Y)
 		}
 
 		for i, ident := range node.Identifier {
 			if !inter.CurrentScope.Add(ident.Value, readyValues[i]) {
-				throw("Attempt to redeclare a variable '%s'.", node.X, node.Y, ident.Value)
+				throw(inter.CurrentFileName, "Attempt to redeclare a variable '%s'.", node.X, node.Y, ident.Value)
 			}
 		}
 	case *SetVar:
 		readyValues := inter.CookValues(uint(len(node.Value)), node.Value, node.X, node.Y)
 
 		if len(readyValues) > len(node.Var) {
-			throw("Too many values in assignment", node.X, node.Y)
+			throw(inter.CurrentFileName, "Too many values in assignment", node.X, node.Y)
 		} else if len(readyValues) < len(node.Var) {
-			throw("Too few values in assignment", node.X, node.Y)
+			throw(inter.CurrentFileName, "Too few values in assignment", node.X, node.Y)
 		}
 
 		for i, ident := range node.Var {
 			if !inter.CurrentScope.Set(ident.Value, readyValues[i], node.X, node.Y) {
-				throw("Attempt to assign value to non-existing variable '%s'.", node.X, node.Y, node.Value)
+				throw(inter.CurrentFileName, "Attempt to assign value to non-existing variable '%s'.", node.X, node.Y, node.Value)
 			}
 		}
 	case *IndirAssignNode:
@@ -2086,22 +2092,22 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 
 		valuePointer, ok := valuePointerInterface.(uintptr)
 		if !ok {
-			throw("Attempt to do indirect assignment with invalid pointer.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Attempt to do indirect assignment with invalid pointer.", node.X, node.Y)
 		}
 
 		pointerCell := scope.GetCellWithAddress(unsafe.Pointer(valuePointer))
 		if pointerCell == nil {
-			throw("Attempt to do indirect assignment of non-existing pointer.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Attempt to do indirect assignment of non-existing pointer.", node.X, node.Y)
 		}
 
 		valuePtr, ok := pointerCell.Get().(uintptr)
 		if !ok {
-			throw("Attempt to do indirect assignment with non-pointer value.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Attempt to do indirect assignment with non-pointer value.", node.X, node.Y)
 		}
 
 		cellOfPtr := scope.GetCellWithAddress(unsafe.Pointer(valuePtr))
 		if cellOfPtr == nil {
-			throw("Attempt to do indirect assignment of non-existing value.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Attempt to do indirect assignment of non-existing value.", node.X, node.Y)
 		}
 
 		newValue := inter.GetNodeValueS(node.Value, node.X, node.Y)
@@ -2139,42 +2145,42 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		return true, false, readyValues
 	case *ExternalImport:
 		if inter.UnableToImport {
-			throw("External import keyword must be at the beggining of the code.", node.Position(), node.Line())
+			throw(inter.CurrentFileName, "External import keyword must be at the beggining of the code.", node.Position(), node.Line())
 		}
 		scope := inter.CurrentScope
 		if !scope.MainScope {
-			throw("Cannot use external import keyword outside main scope.", node.Position(), node.Line())
+			throw(inter.CurrentFileName, "Cannot use external import keyword outside main scope.", node.Position(), node.Line())
 		}
 
 		path := node.Path.Value
 		if len(path) > 0 {
 			path := node.Path.Value
 
-			loadLibraryIntoScope(path, node, scope)
+			loadLibraryIntoScope(inter.CurrentFileName, path, node, scope)
 
 		} else {
-			throw("Cannot perform external import without a library path.", node.Position(), node.Line())
+			throw(inter.CurrentFileName, "Cannot perform external import without a library path.", node.Position(), node.Line())
 		}
 		return false, false, nil
 	case *Import:
 		if inter.UnableToImport {
-			throw("Import keyword must be at the beggining of the code.", node.Position(), node.Line())
+			throw(inter.CurrentFileName, "Import keyword must be at the beggining of the code.", node.Position(), node.Line())
 		}
 		if !inter.CurrentScope.MainScope {
-			throw("Cannot use import keyword outside main scope.", node.Position(), node.Line())
+			throw(inter.CurrentFileName, "Cannot use import keyword outside main scope.", node.Position(), node.Line())
 		}
 
 		if len(node.Path) > 0 && len(node.Path) < 2 {
 			path, ok := node.Path[0].(*StrNode)
 			if !ok {
-				throw("Path for the import keyword cannot be a non-string value.", node.Position(), node.Line())
+				throw(inter.CurrentFileName, "Path for the import keyword cannot be a non-string value.", node.Position(), node.Line())
 			}
 
 			importModule(path.Value, inter.CurrentScope)
 		} else if len(node.Path) > 1 {
-			throw("Cannot import more than one file or module.", node.Position(), node.Line())
+			throw(inter.CurrentFileName, "Cannot import more than one file or module.", node.Position(), node.Line())
 		} else {
-			throw("Cannot import the file or the module without a path.", node.Position(), node.Line())
+			throw(inter.CurrentFileName, "Cannot import the file or the module without a path.", node.Position(), node.Line())
 		}
 		return false, false, nil
 	case *WhileNode:
@@ -2202,11 +2208,11 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 				}
 			}
 		default:
-			throw("Unable to iterate over a non-table value.", node.X, node.Y)
+			throw(inter.CurrentFileName, "Unable to iterate over a non-table value.", node.X, node.Y)
 		}
 	default:
 		//fmt.Printf("%T",node.(*BinOpNode).L)
-		throw("Invalid node '%s'.2222", node.Position(), node.Line(), getInterfaceType(node))
+		throw(inter.CurrentFileName, "Invalid node '%s'.", node.Position(), node.Line(), getInterfaceType(node))
 	}
 	inter.UnableToImport = true
 	return false, false, nil
@@ -2226,7 +2232,7 @@ func (inter *Interpreter) Complete(logenv bool) map[any]*Cell { //go run yks run
 		}
 	}()
 
-	mainScope := NewScope(nil)
+	mainScope := NewScope(inter, nil)
 	mainScope.MainScope = true
 
 	inter.CurrentScope = mainScope

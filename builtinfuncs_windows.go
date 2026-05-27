@@ -41,9 +41,10 @@ var (
 
 		"sleep": func(v ...any) []any {
 			x, y := v[0].(int), v[1].(int)
+			inter := v[2].(*Interpreter)
 
 			if len(v) == 0 {
-				throw("Function must have one argument.", x, y)
+				throw(inter.CurrentFileName, "Function must have one argument.", x, y)
 			}
 
 			v = v[BUILTIN_SPECIALS:]
@@ -54,26 +55,28 @@ var (
 			case int64:
 				time.Sleep(time.Duration(t * int64(time.Millisecond)))
 			default:
-				throw("Time value must be a number.", x, y)
+				throw(inter.CurrentFileName, "Time value must be a number.", x, y)
 			}
 			return nil
 		},
 
 		"throw": func(v ...any) []any {
 			x, y := v[0].(int), v[1].(int)
+			inter := v[2].(*Interpreter)
 
 			v = v[BUILTIN_SPECIALS:]
 			if len(v) <= 0 {
-				throw("Function requires one or more arguments.", x, y)
+				throw(inter.CurrentFileName, "Function requires one or more arguments.", x, y)
 			}
 
-			throw(format(v...), x, y)
+			throw(inter.CurrentFileName, format(v...), x, y)
 			return nil
 		},
 
 		"len": func(v ...any) []any {
 			argsCheck(v, 1, 1, "any")
 			x, y := v[0].(int), v[1].(int)
+			inter := v[2].(*Interpreter)
 
 			v = v[BUILTIN_SPECIALS:]
 
@@ -93,7 +96,7 @@ var (
 
 				return []any{int64(lastFieldLayout.Offset + lastFieldLayout.Size)}
 			default:
-				throw("Cannot get lenght of non-string, non-table or non-instance value.", x, y)
+				throw(inter.CurrentFileName, "Cannot get lenght of non-string, non-table or non-instance value.", x, y)
 			}
 			return nil
 		},
@@ -113,6 +116,7 @@ var (
 		"numformat": func(v ...any) []any {
 			argsCheck(v, 2, 2, "string", "bool")
 			x, y := v[0].(int), v[1].(int)
+			inter := v[2].(*Interpreter)
 
 			v = v[BUILTIN_SPECIALS:]
 
@@ -123,18 +127,18 @@ var (
 				n, err := strconv.ParseFloat(str, 64)
 				switch err {
 				case strconv.ErrSyntax:
-					throw("Syntax error while trying to parse number value.", x, y)
+					throw(inter.CurrentFileName, "Syntax error while trying to parse number value.", x, y)
 				case strconv.ErrRange:
-					throw("Number value is out of range.", x, y)
+					throw(inter.CurrentFileName, "Number value is out of range.", x, y)
 				}
 				return []any{n}
 			} else {
 				n, err := strconv.ParseInt(str, 0, 64)
 				switch err {
 				case strconv.ErrSyntax:
-					throw("Syntax error while trying to parse number value.", x, y)
+					throw(inter.CurrentFileName, "Syntax error while trying to parse number value.", x, y)
 				case strconv.ErrRange:
-					throw("Number value is out of range.", x, y)
+					throw(inter.CurrentFileName, "Number value is out of range.", x, y)
 				}
 
 				return []any{n}
@@ -346,7 +350,7 @@ func refreshPointerValues(inter *Interpreter, ptrs []uintptr) {
 	}
 }
 
-func valueToPtr(v any, x, y int) (uintptr, any) {
+func valueToPtr(inter *Interpreter, v any, x, y int) (uintptr, any) {
 	switch val := v.(type) {
 	case float64:
 		return uintptr(math.Float64bits(val)), val
@@ -372,7 +376,7 @@ func valueToPtr(v any, x, y int) (uintptr, any) {
 		return 0, nil
 	default:
 		fmt.Printf("%T\n", val)
-		throw("Unsupported type.", x, y)
+		throw(inter.CurrentFileName, "Unsupported type, unable to get pointer address.", x, y)
 	}
 	return 0, nil
 }
@@ -386,7 +390,7 @@ func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]
 
 	//println("Debug 2")
 	for _, v := range args {
-		ptr, buf := valueToPtr(v, node.Position(), node.Line())
+		ptr, buf := valueToPtr(inter, v, node.Position(), node.Line())
 		if buf != nil {
 			buffers[i] = buf
 		}

@@ -26,11 +26,12 @@ func argsCheck(v []any, min, max int, expectedDataTypes ...string) {
 	}
 
 	x, y := v[0].(int), v[1].(int)
+	inter := v[2].(*Interpreter)
 
 	if len(v) < min+BUILTIN_SPECIALS {
-		throw("Attempt to pass less arguments to a function call than function actually need, minimum is %d.", x, y, min)
+		throw(inter.CurrentFileName, "Attempt to pass less arguments to a function call than function actually need, minimum is %d.", x, y, min)
 	} else if len(v) > max+3 {
-		throw("Attempt to pass more arguments to a function call than function actually need, maximum is %d.", x, y, max)
+		throw(inter.CurrentFileName, "Attempt to pass more arguments to a function call than function actually need, maximum is %d.", x, y, max)
 	} else {
 		args := v[BUILTIN_SPECIALS:]
 
@@ -40,7 +41,7 @@ func argsCheck(v []any, min, max int, expectedDataTypes ...string) {
 			argument := args[i]
 
 			if !checkDataType(expectedDataType, argument) {
-				throw("Invalid argument #%d. Expected %s.", x, y, i+1, expectedDataType)
+				throw(inter.CurrentFileName, "Invalid argument #%d. Expected %s.", x, y, i+1, expectedDataType)
 			}
 		}
 	}
@@ -223,9 +224,9 @@ func getFileString(path string) (string, error) {
 	return string(c), err
 }
 
-func throw(errForm string, x, y int, v ...any) {
+func throw(filename, errForm string, x, y int, v ...any) {
 
-	errMsg := fmt.Sprintf(shortennedPLName+" "+fmt.Sprintf("%d:%d", y, x)+": "+errForm, v...)
+	errMsg := fmt.Sprintf(shortennedPLName+" "+fmt.Sprintf("%s:%d:%d", filename, y, x)+": "+errForm, v...)
 	if !strings.HasSuffix(errMsg, ".") {
 		errMsg += "."
 	}
@@ -253,11 +254,11 @@ func getAbsPath(relPath string) string {
 	return abs
 }
 
-func loadLibraryIntoScope(path string, node *ExternalImport, scope *Scope) { //go run yks run test.yks
-	library := syscall.NewLazyDLL(path)
+func loadLibraryIntoScope(interpreter_filename string, importPath string, node *ExternalImport, scope *Scope) { //go run yks run test.yks
+	library := syscall.NewLazyDLL(importPath)
 	err := library.Load()
 	if err != nil {
-		throw(err.Error(), node.X, node.Y)
+		throw(interpreter_filename, err.Error(), node.X, node.Y)
 	}
 
 	suc := scope.Add(library, "DLL_LIBRARY")
@@ -281,7 +282,7 @@ func loadLibraryIntoScope(path string, node *ExternalImport, scope *Scope) { //g
 			proc := library.NewProc(v[0].(string))
 			err := proc.Find()
 			if err != nil {
-				throw(err.Error(), x, y)
+				throw(interpreter_filename, err.Error(), x, y)
 			}
 
 			suc := scope.Add(proc, "DLL_PROC")
@@ -306,17 +307,17 @@ func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 
 	filesBeingUsed = append(filesBeingUsed, [2]string{fileAbs, fileRel})
 
-	lexer := NewLexer(content)
+	lexer := NewLexer(fileRel, content)
 	tokens := lexer.GetTokens()
 
 	if info {
 		outputTokens(tokens)
 	}
 
-	parser := NewParser(tokens)
+	parser := NewParser(fileRel, tokens)
 	ast := parser.AST()
 
-	interpreter := NewInterpreter(ast)
+	interpreter := NewInterpreter(fileRel, ast)
 	return interpreter.Complete(info)
 }
 
@@ -366,7 +367,7 @@ func main() { //*go run yks run test.yks
 		src, err := getFileString(path)
 		handleLite(err)
 
-		lexer := NewLexer(src)
+		lexer := NewLexer(path, src)
 
 		outputTokens(lexer.GetTokens())
 	}
