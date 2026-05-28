@@ -168,7 +168,7 @@ var (
 
 			v = v[BUILTIN_SPECIALS:]
 
-			r := rune(v[0].(int64))
+			r := rune(toInt64(v[0]))
 
 			return []any{string(r)}
 		},
@@ -270,7 +270,9 @@ var (
 
 			v = v[BUILTIN_SPECIALS:]
 
-			return []any{uintptr(v[0].(int64))}
+			return []any{uintptr(
+				toInt64(v[0]),
+			)}
 		},
 
 		"pvoid": func(v ...any) []any {
@@ -278,7 +280,11 @@ var (
 
 			v = v[BUILTIN_SPECIALS:]
 
-			return []any{unsafe.Pointer(uintptr(v[0].(int64)))}
+			return []any{unsafe.Pointer(
+				uintptr(
+					toInt64(v[0]),
+				),
+			)}
 		},
 	}
 )

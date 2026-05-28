@@ -171,7 +171,7 @@ var (
 
 			v = v[BUILTIN_SPECIALS:]
 
-			r := rune(v[0].(int64))
+			r := rune(toInt64(v[0]))
 
 			return []any{string(r)}
 		},

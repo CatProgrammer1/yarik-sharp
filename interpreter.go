@@ -49,6 +49,7 @@ type Scope struct {
 
 type Cell struct {
 	IntValue      int64
+	UintValue     uint64
 	FloatValue    float64
 	BoolValue     bool
 	StringValue   string
@@ -87,16 +88,44 @@ func (cell *Cell) Set(value any, nonptr bool) {
 	case int16:
 		cell.IntValue = int64(value)
 		cell.DataType = "int"
-		cell.Bits = 32
+		cell.Bits = 16
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(&cell.IntValue)
 		}
 	case int8:
 		cell.IntValue = int64(value)
 		cell.DataType = "int"
-		cell.Bits = 32
+		cell.Bits = 8
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(&cell.IntValue)
+		}
+	case uint64:
+		cell.UintValue = value
+		cell.DataType = "uint"
+		cell.Bits = 64
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.UintValue)
+		}
+	case uint32:
+		cell.UintValue = uint64(value)
+		cell.DataType = "uint"
+		cell.Bits = 32
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.UintValue)
+		}
+	case uint16:
+		cell.UintValue = uint64(value)
+		cell.DataType = "uint"
+		cell.Bits = 16
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.UintValue)
+		}
+	case uint8:
+		cell.UintValue = uint64(value)
+		cell.DataType = "uint"
+		cell.Bits = 8
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.UintValue)
 		}
 	case float64:
 		cell.FloatValue = value
@@ -202,6 +231,8 @@ func (cell *Cell) Get() any {
 	switch cell.DataType {
 	case "int":
 		return cell.IntValue
+	case "uint":
+		return cell.UintValue
 	case "int32, int16, int8":
 		return toInt(cell.IntValue, -int(cell.Bits))
 	case "float":
@@ -1284,6 +1315,14 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 				return -value
 			case int8:
 				return -value
+			case uint64:
+				return -int64(value)
+			case uint32:
+				return -int32(value)
+			case uint16:
+				return -int16(value)
+			case uint8:
+				return -int8(value)
 			case float64:
 				return -value
 			case float32:

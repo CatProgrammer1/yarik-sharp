@@ -4,12 +4,9 @@ var (
 	binOperations = map[string]func(inter *Interpreter, a, b any, x, y int) any{
 		"add": func(inter *Interpreter, a, b any, x, y int) any {
 			if checkDataType("number", a) && checkDataType("number", b) {
-				if checkType[float64](a) && checkType[float64](b) {
-					return a.(float64) + b.(float64)
-				} else if checkType[int64](a) && checkType[int64](b) {
-					return a.(int64) + b.(int64)
-				} else if checkType[float64](a) && checkType[int64](b) ||
-					checkType[int64](a) && checkType[float64](b) {
+				if checkDataType("int", a) && checkDataType("int", b) {
+					return toInt64(a) + toInt64(b)
+				} else if checkDataType("float", a) || checkDataType("float", b) {
 					return mustNTOF64(a) + mustNTOF64(b)
 				}
 			} else if checkType[string](a) && checkType[string](b) {
@@ -25,71 +22,61 @@ var (
 		},
 		"sub": func(inter *Interpreter, a, b any, x, y int) any {
 			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw(inter.CurrentFileName, "Unable to perform operation sub on non-number values.", x, y)
+				throw(inter.CurrentFileName, "Unable to perform operation sub on non-number values with types: %s and %s.", x, y, getValueType(a), getValueType(b))
 			}
-			if checkType[float64](a) && checkType[float64](b) {
-				return a.(float64) - b.(float64)
-			} else if checkType[int64](a) && checkType[int64](b) {
-				return a.(int64) - b.(int64)
-			} else if checkType[float64](a) && checkType[int64](b) ||
-				checkType[int64](a) && checkType[float64](b) {
+			if checkDataType("int", a) && checkDataType("int", b) {
+				return toInt64(a) - toInt64(b)
+			} else if checkDataType("float", a) || checkDataType("float", b) {
 				return mustNTOF64(a) - mustNTOF64(b)
 			}
-			throw(inter.CurrentFileName, "Unable to perform operation sub on non-number values: %s and %s.", x, y, getValueType(a), getValueType(b))
+			throw(inter.CurrentFileName, "Unable to perform operation sub on non-number values with types: %s and %s.", x, y, getValueType(a), getValueType(b))
 			return nil
 		},
 		"div": func(inter *Interpreter, a, b any, x, y int) any {
 			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw(inter.CurrentFileName, "Unable to perform operation div on non-number values: %s and %s.", x, y, getValueType(a), getValueType(b))
+				throw(inter.CurrentFileName, "Unable to perform operation div on non-number values with types: %s and %s.", x, y, getValueType(a), getValueType(b))
 			}
-			if checkType[float64](a) && checkType[float64](b) {
-				return a.(float64) / b.(float64)
-			} else if checkType[int64](a) && checkType[int64](b) {
-				return a.(int64) / b.(int64)
-			} else if checkType[float64](a) && checkType[int64](b) ||
-				checkType[int64](a) && checkType[float64](b) {
+			if checkDataType("int", a) && checkDataType("int", b) {
+				return toInt64(a) / toInt64(b)
+			} else if checkDataType("float", a) || checkDataType("float", b) {
 				return mustNTOF64(a) / mustNTOF64(b)
 			}
-			throw(inter.CurrentFileName, "Unable to perform operation div on non-number values: %s and %s.", x, y, getValueType(a), getValueType(b))
+			throw(inter.CurrentFileName, "Unable to perform operation div on non-number values with types: %s and %s.", x, y, getValueType(a), getValueType(b))
 			return nil
 		},
 		"mul": func(inter *Interpreter, a, b any, x, y int) any {
 			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw(inter.CurrentFileName, "Unable to perform operation mul on non-number values: %s and %s.", x, y, getValueType(a), getValueType(b))
+				throw(inter.CurrentFileName, "Unable to perform operation mul on non-number values with types: %s and %s.", x, y, getValueType(a), getValueType(b))
 			}
-			if checkType[float64](a) && checkType[float64](b) {
-				return a.(float64) * b.(float64)
-			} else if checkType[int64](a) && checkType[int64](b) {
-				return a.(int64) * b.(int64)
-			} else if checkType[float64](a) && checkType[int64](b) ||
-				checkType[int64](a) && checkType[float64](b) {
-				return mustNTOF64(a) * mustNTOF64(b)
+			if checkDataType("int", a) && checkDataType("int", b) {
+				return toInt64(a) / toInt64(b)
+			} else if checkDataType("float", a) || checkDataType("float", b) {
+				return mustNTOF64(a) / mustNTOF64(b)
 			}
-			throw(inter.CurrentFileName, "Unable to perform operation mul on non-number values: %s and %s.", x, y, getValueType(a), getValueType(b))
+			throw(inter.CurrentFileName, "Unable to perform operation mul on non-number values with types: %s and %s.", x, y, getValueType(a), getValueType(b))
 			return nil
 		},
 
 		"bitor": func(inter *Interpreter, a, b any, x, y int) any {
-			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw(inter.CurrentFileName, "Unable to perform operation sub on non-number values: %s and %s.", x, y, getValueType(a), getValueType(b))
+			if !(checkDataType("int", a) && checkDataType("int", b)) {
+				throw(inter.CurrentFileName, "Unable to perform operation bitor on non-integer values with types: %s and %s.", x, y, getValueType(a), getValueType(b))
 			}
-			if checkType[int64](a) && checkType[int64](b) {
-				return a.(int64) | b.(int64)
+			if checkDataType("uint", a) && checkDataType("uint", b) {
+				return toUint64(a) | toUint64(b)
+			} else {
+				return toInt64(a) | toInt64(b)
 			}
-			throw(inter.CurrentFileName, "Can only perform operation bitor on integer values: %s and %s.", x, y, getValueType(a), getValueType(b))
-			return nil
 		},
 
 		"greater": func(inter *Interpreter, a, b any, x, y int) any {
 			if !(checkDataType("number", a) && checkDataType("number", b)) {
-				throw(inter.CurrentFileName, "Unable to perform operation greater non-number values: %s and %s.", x, y, getValueType(a), getValueType(b))
+				throw(inter.CurrentFileName, "Unable to perform operation greater non-number values with types: %s and %s.", x, y, getValueType(a), getValueType(b))
 			}
-			if checkType[float64](a) && checkType[float64](b) {
-				return a.(float64) > b.(float64)
-			} else if checkType[int64](a) && checkType[int64](b) {
-				return a.(int64) > b.(int64)
-			} else if checkType[float64](a) && checkType[int64](b) ||
-				checkType[int64](a) && checkType[float64](b) {
+			if checkDataType("uint", a) && checkDataType("uint", b) {
+				return toUint64(a) > toUint64(b)
+			} else if checkDataType("int", a) && checkDataType("int", b) {
+				return toInt64(a) > toInt64(b)
+			} else if checkDataType("float", a) || checkDataType("float", b) {
 				return mustNTOF64(a) > mustNTOF64(b)
 			}
 			return nil
@@ -98,12 +85,11 @@ var (
 			if !(checkDataType("number", a) && checkDataType("number", b)) {
 				throw(inter.CurrentFileName, "Unable to perform operation less non-number values: %s and %s.", x, y, getValueType(a), getValueType(b))
 			}
-			if checkType[float64](a) && checkType[float64](b) {
-				return a.(float64) < b.(float64)
-			} else if checkType[int64](a) && checkType[int64](b) {
-				return a.(int64) < b.(int64)
-			} else if checkType[float64](a) && checkType[int64](b) ||
-				checkType[int64](a) && checkType[float64](b) {
+			if checkDataType("uint", a) && checkDataType("uint", b) {
+				return toUint64(a) < toUint64(b)
+			} else if checkDataType("int", a) && checkDataType("int", b) {
+				return toInt64(a) < toInt64(b)
+			} else if checkDataType("float", a) || checkDataType("float", b) {
 				return mustNTOF64(a) < mustNTOF64(b)
 			}
 			return nil
@@ -112,12 +98,11 @@ var (
 			if !(checkDataType("number", a) && checkDataType("number", b)) {
 				throw(inter.CurrentFileName, "Unable to perform operation greater-equals non-number values: %s and %s.", x, y, getValueType(a), getValueType(b))
 			}
-			if checkType[float64](a) && checkType[float64](b) {
-				return a.(float64) >= b.(float64)
-			} else if checkType[int64](a) && checkType[int64](b) {
-				return a.(int64) >= b.(int64)
-			} else if checkType[float64](a) && checkType[int64](b) ||
-				checkType[int64](a) && checkType[float64](b) {
+			if checkDataType("uint", a) && checkDataType("uint", b) {
+				return toUint64(a) >= toUint64(b)
+			} else if checkDataType("int", a) && checkDataType("int", b) {
+				return toInt64(a) >= toInt64(b)
+			} else if checkDataType("float", a) || checkDataType("float", b) {
 				return mustNTOF64(a) >= mustNTOF64(b)
 			}
 			return nil
@@ -126,12 +111,11 @@ var (
 			if !(checkDataType("number", a) && checkDataType("number", b)) {
 				throw(inter.CurrentFileName, "Unable to perform operation less-equals non-number values: %s and %s.", x, y, getValueType(a), getValueType(b))
 			}
-			if checkType[float64](a) && checkType[float64](b) {
-				return a.(float64) <= b.(float64)
-			} else if checkType[int64](a) && checkType[int64](b) {
-				return a.(int64) <= b.(int64)
-			} else if checkType[float64](a) && checkType[int64](b) ||
-				checkType[int64](a) && checkType[float64](b) {
+			if checkDataType("uint", a) && checkDataType("uint", b) {
+				return toUint64(a) <= toUint64(b)
+			} else if checkDataType("int", a) && checkDataType("int", b) {
+				return toInt64(a) <= toInt64(b)
+			} else if checkDataType("float", a) || checkDataType("float", b) {
 				return mustNTOF64(a) <= mustNTOF64(b)
 			}
 			return nil
@@ -146,11 +130,10 @@ var (
 		},
 
 		"valbits": func(inter *Interpreter, a, b any, x, y int) any {
-			bits, ok := b.(int64)
-			if !ok {
-				println("SHO", b)
+			if !checkDataType("int", b) {
 				throw(inter.CurrentFileName, "Bits count must be an integer value, got '%s'.", x, y, getValueType(b))
 			}
+			bits := toInt64(b)
 
 			switch n := a.(type) {
 			case int64, int32, int16, int8:

@@ -3,6 +3,7 @@ package main
 import (
 	//"fmt"
 
+	"errors"
 	"strconv"
 	"strings"
 	"unicode"
@@ -113,18 +114,16 @@ const (
 	metachars   = "nrt\\b\"'0"
 )
 
-func strToFloat(str string) float64 {
+func strToFloat(str string) (float64, error) {
 	n, err := strconv.ParseFloat(str, 64)
-	handle(err)
 
-	return n
+	return n, err
 }
 
-func strToInt(str string) int64 {
+func strToInt(str string) (int64, error) {
 	n, err := strconv.ParseInt(str, 0, 64)
-	handle(err)
 
-	return n
+	return n, err
 }
 
 type Lexer struct {
@@ -328,9 +327,23 @@ func (lexer *Lexer) GetNumber() Token {
 	}
 
 	if dots > 0 {
-		return NewToken(strToFloat(number), "float", lexer.CurrentPosition, lexer.CurrentLine)
+		n, err := strToFloat(number)
+		if errors.Is(err, strconv.ErrSyntax) {
+			throw(lexer.CurrentFileName, "Invalid float syntax: '%s'", lexer.CurrentColumn, lexer.CurrentLine, number)
+		} else {
+			handle(err)
+		}
+
+		return NewToken(n, "float", lexer.CurrentPosition, lexer.CurrentLine)
 	} else {
-		return NewToken(strToInt(number), "int", lexer.CurrentPosition, lexer.CurrentLine)
+		n, err := strToInt(number)
+		if errors.Is(err, strconv.ErrSyntax) {
+			throw(lexer.CurrentFileName, "Invalid integer syntax: '%s'", lexer.CurrentColumn, lexer.CurrentLine, number)
+		} else {
+			handle(err)
+		}
+
+		return NewToken(n, "int", lexer.CurrentPosition, lexer.CurrentLine)
 	}
 }
 

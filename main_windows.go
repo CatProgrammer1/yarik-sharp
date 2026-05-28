@@ -84,8 +84,12 @@ func mustNTOF64(n any) float64 {
 	switch n := n.(type) {
 	case float64:
 		return n
-	case int64:
+	case float32:
 		return float64(n)
+	case int64, int32, int, int16, int8:
+		return float64(toInt64(n))
+	case uint8, uint16, uint, uint32, uint64:
+		return float64(toUint64(n))
 	}
 	return 0
 }
@@ -149,12 +153,38 @@ func checkDataType(expected string, v any) bool {
 		}
 
 		return false
-	case "int":
+	case "m_int":
 		_, ok := v.(int64)
+
+		return ok
+	case "int":
+		switch v.(type) {
+		case int64, int32, int16, int8, uint8, uint16, uint32, uint64:
+			return true
+		}
+
+		return false
+	case "uint":
+		switch v.(type) {
+		case uint8, uint16, uint32, uint, uint64:
+			return true
+		}
+
+		return false
+	case "m_float":
+		_, ok := v.(float64)
 
 		return ok
 	case "float":
 		_, ok := v.(float64)
+		if ok {
+			return ok
+		}
+
+		_, ok = v.(float32)
+		if ok {
+			return ok
+		}
 
 		return ok
 	case "bool":
