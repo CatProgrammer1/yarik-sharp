@@ -557,9 +557,6 @@ func (scope *Scope) Add(key, value any) (success bool) {
 	if key == "_" {
 		return true
 	}
-	if _, ok := scope.Data[key]; ok {
-		return false
-	}
 	cell := &Cell{
 		Scope: scope,
 	}

@@ -257,7 +257,10 @@ func valueToPtr(inter *Interpreter, v any, x, y int) (uintptr, any) {
 	case []any:
 		return uintptr(unsafe.Pointer(&val[0])), val
 	case string:
-		utf16p, _ := syscall.UTF16FromString(val)
+		utf16p, err := syscall.UTF16FromString(val)
+		if err != nil {
+			throw(inter.CurrentFileName, err.Error(), x, y)
+		}
 
 		return uintptr(unsafe.Pointer(&utf16p[0])), utf16p
 	case nil:
