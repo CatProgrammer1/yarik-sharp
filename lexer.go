@@ -110,6 +110,7 @@ func getTokenUsingType(t string) string {
 const (
 	ignore      = " \n\t\r"
 	digits      = "0123456789"
+	digitsHex   = "0123456789ABCDEFabcdef"
 	stringChars = "'\"`"
 	metachars   = "nrt\\b\"'0"
 )
@@ -309,14 +310,22 @@ func onlyLetters(s string) bool {
 func (lexer *Lexer) GetNumber() Token {
 	var number string
 	dots := 0
+	hexademical := false
 
 	for lexer.CurrentPosition >= 0 {
 		charStr := lexer.Str()
-		if !strings.Contains(digits+".", charStr) {
+		if !hexademical && !strings.Contains(digits+".x", charStr) {
+			break
+		} else if hexademical && !strings.Contains(digitsHex, charStr) {
 			break
 		}
 		if charStr == "." {
 			dots++
+		} else if charStr == "x" {
+			if hexademical {
+				break
+			}
+			hexademical = true
 		}
 		if dots > 1 {
 			break
