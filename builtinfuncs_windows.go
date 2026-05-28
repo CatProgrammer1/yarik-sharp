@@ -179,6 +179,8 @@ var (
 		"bytes": func(v ...any) []any {
 			argsCheck(v, 1, 1, "string")
 
+			inter := v[2].(*Interpreter)
+
 			v = v[BUILTIN_SPECIALS:]
 
 			str := v[0].(string)
@@ -195,7 +197,7 @@ var (
 			}
 
 			for i, v := range slice {
-				m.Set(int64(i), CLPTR(int64(v)))
+				m.Set(int64(i), CLPTR(inter.CurrentScope, int64(v)))
 			}
 			m.ToMemory()
 

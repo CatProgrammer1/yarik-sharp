@@ -297,7 +297,7 @@ func loadLibraryIntoScope(interpreter_filename string, importPath string, node *
 	}
 
 	name, _ := strings.CutSuffix(filepath.Base(library.Name), ".dll")
-	scope.Data[name] = CLPTR(&FuncDec{
+	scope.Data[name] = CLPTR(scope, &FuncDec{
 		Identifier: IdentNode{
 			Value: name,
 			X:     node.X,
@@ -307,6 +307,7 @@ func loadLibraryIntoScope(interpreter_filename string, importPath string, node *
 			argsCheck(v, 1, 1, "string")
 
 			x, y := v[0].(int), v[1].(int)
+
 			v = v[BUILTIN_SPECIALS:]
 
 			proc := library.NewProc(v[0].(string))

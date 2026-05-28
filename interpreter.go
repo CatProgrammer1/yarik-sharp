@@ -268,16 +268,20 @@ func (cell *Cell) GetAddress() unsafe.Pointer {
 	return cell.Ptr
 }
 
-func CLPTR(v any) *Cell {
-	cell := &Cell{}
+func CLPTR(scope *Scope, v any) *Cell {
+	cell := &Cell{
+		Scope: scope,
+	}
 
 	cell.Set(v, false)
 
 	return cell
 }
 
-func CL(v any) Cell {
-	cell := Cell{}
+func CL(scope *Scope, v any) Cell {
+	cell := Cell{
+		Scope: scope,
+	}
 
 	cell.Set(v, true)
 
@@ -1230,6 +1234,7 @@ func importModule(path string, mainScope *Scope) {
 
 		for k, v := range moduleData {
 			cell := &Cell{}
+			cell.Scope = mainScope
 			cell.Set(v.Get(), false)
 
 			mainScope.Data[k] = cell
@@ -1530,7 +1535,7 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 			if index+1 < len(keys) {
 				throw(inter.CurrentFileName, "Attempt to index non-table value.", getElemN.X, getElemN.Y)
 			} else {
-				return CLPTR(nil).Get()
+				return CLPTR(inter.CurrentScope, nil).Get()
 			}
 		}
 
@@ -1577,7 +1582,7 @@ func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *Ge
 			if index+1 < len(keys) {
 				throw(inter.CurrentFileName, "Attempt to index non-table value.", getElemN.X, getElemN.Y)
 			} else {
-				return CLPTR(nil)
+				return CLPTR(inter.CurrentScope, nil)
 			}
 		}
 
@@ -1695,9 +1700,9 @@ func (inter *Interpreter) GetMap(node *MapNode) *Map {
 				throw(inter.CurrentFileName, "Cannot assign a field cannot be an empty value.", element.X, element.Y)
 			}
 
-			m.Set(key, CLPTR(values[0]))
+			m.Set(key, CLPTR(inter.CurrentScope, values[0]))
 		} else {
-			m.Set(key, CLPTR(value))
+			m.Set(key, CLPTR(inter.CurrentScope, value))
 		}
 	}
 
@@ -1848,7 +1853,7 @@ func (inter *Interpreter) SetTableElementValue(table *Map, keys []any, value any
 		switch elem := elem.Value.Get().(type) {
 		case *Map:
 			if index+1 >= len(keys) {
-				table.Set(key, CLPTR(value))
+				table.Set(key, CLPTR(inter.CurrentScope, value))
 
 				elem.ToMemory()
 				break
@@ -1857,7 +1862,7 @@ func (inter *Interpreter) SetTableElementValue(table *Map, keys []any, value any
 			return
 		}
 	}
-	table.Set(key, CLPTR(value))
+	table.Set(key, CLPTR(inter.CurrentScope, value))
 	table.ToMemory()
 }
 
