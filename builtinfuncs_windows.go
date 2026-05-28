@@ -156,8 +156,8 @@ var (
 		APPEND:
 			for _, v := range b.AllFromFront() {
 				switch v := v.Get().(type) {
-				case int64:
-					bstring = append(bstring, byte(v))
+				case int64, int32, int, int16, int8:
+					bstring = append(bstring, toInt(toInt64(v), 8).(byte))
 				default:
 					break APPEND
 				}
@@ -204,64 +204,6 @@ var (
 			}
 		},
 
-		//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!------------------------------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-		/*"syscallnt": func(v ...any) []any {
-		argsCheck(v, 2, 2, "string", "table")
-
-		x, y := v[0].(int), v[1].(int)
-		inter := v[2].(*Interpreter)
-
-		v = v[BUILTIN_SPECIALS:]
-
-		procName := v[0].(string)
-		paramsMap := v[1].(*Map)
-
-		params := make([]uintptr, paramsMap.Len())
-		buffers := make([]any, paramsMap.Len())
-		i := 0
-
-		for _, v := range paramsMap.AllFromFront() {
-			ptr, buf := valueToPtr(v.Get(), x, y)
-			if buf != nil {
-				buffers[i] = buf
-			}
-
-			params[i] = ptr
-			i++
-		}
-
-		ntdll := syscall.NewLazyDLL("ntdll.dll")
-		proc := ntdll.NewProc(procName)
-
-		procerr := proc.Find()
-		if procerr != nil {
-			return []any{uintptr(0), uintptr(0), procerr}
-		}
-
-		r1, r2, err := proc.Call(params...)
-
-		/*for _, ptr := range params {
-			value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
-			if value == nil {
-				continue
-			}
-
-			switch value := value.Get().(type) {
-			case *StructObject:
-				layout := value.Layout()
-
-				value.FromMemoryLayout(layout)
-			case *Map:
-				value.FromMemory()
-			}
-		}*/
-
-		//refreshPointerValues(inter, params)
-
-		//return []any{r1, r2, err}
-		//},
-
 		"closehandle": func(v ...any) []any {
 			argsCheck(v, 1, 1, "ptr")
 
@@ -273,62 +215,6 @@ var (
 
 			return []any{err}
 		},
-
-		/*"kernelcall": func(v ...any) []any {
-		argsCheck(v, 2, 2, "string", "table")
-
-		x, y := v[0].(int), v[1].(int)
-		inter := v[2].(*Interpreter)
-
-		v = v[BUILTIN_SPECIALS:]
-
-		procName := v[0].(string)
-		paramsMap := v[1].(*Map)
-
-		params := make([]uintptr, paramsMap.Len())
-		buffers := make([]any, paramsMap.Len())
-		i := 0
-
-		for _, v := range paramsMap.AllFromFront() {
-			ptr, buf := valueToPtr(v.Get(), x, y)
-			if buf != nil {
-				buffers[i] = buf
-			}
-
-			params[i] = ptr
-			i++
-		}
-
-		kernel := syscall.NewLazyDLL("kernel32.dll")
-		proc := kernel.NewProc(procName)
-
-		procerr := proc.Find()
-		if procerr != nil {
-			return []any{uintptr(0), uintptr(0), procerr}
-		}
-
-		r1, r2, err := proc.Call(params...)
-
-		/*for _, ptr := range params {
-			value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
-			if value == nil {
-				continue
-			}
-
-			switch value := value.Get().(type) {
-			case *StructObject:
-				layout := value.Layout()
-
-				value.FromMemoryLayout(layout)
-			case *Map:
-				value.FromMemory()
-			}
-		}*/
-
-		//refreshPointerValues(inter, params)
-
-		//return []any{r1, r2, err}
-		//},
 	}
 )
 

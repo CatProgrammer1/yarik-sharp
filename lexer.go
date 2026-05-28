@@ -113,14 +113,14 @@ const (
 	metachars   = "nrt\\b\"'0"
 )
 
-func tofloat(str string) float64 {
+func strToFloat(str string) float64 {
 	n, err := strconv.ParseFloat(str, 64)
 	handle(err)
 
 	return n
 }
 
-func toint(str string) int64 {
+func strToInt(str string) int64 {
 	n, err := strconv.ParseInt(str, 0, 64)
 	handle(err)
 
@@ -328,9 +328,9 @@ func (lexer *Lexer) GetNumber() Token {
 	}
 
 	if dots > 0 {
-		return NewToken(tofloat(number), "float", lexer.CurrentPosition, lexer.CurrentLine)
+		return NewToken(strToFloat(number), "float", lexer.CurrentPosition, lexer.CurrentLine)
 	} else {
-		return NewToken(toint(number), "int", lexer.CurrentPosition, lexer.CurrentLine)
+		return NewToken(strToInt(number), "int", lexer.CurrentPosition, lexer.CurrentLine)
 	}
 }
 
