@@ -560,7 +560,9 @@ func (scope *Scope) Add(key, value any) (success bool) {
 	if _, ok := scope.Data[key]; ok {
 		return false
 	}
-	cell := &Cell{}
+	cell := &Cell{
+		Scope: scope,
+	}
 	cell.Set(value, false)
 
 	scope.Data[key] = cell
@@ -1233,8 +1235,9 @@ func importModule(path string, mainScope *Scope) {
 		moduleData := run(finalPath, path, false)
 
 		for k, v := range moduleData {
-			cell := &Cell{}
-			cell.Scope = mainScope
+			cell := &Cell{
+				Scope: mainScope,
+			}
 			cell.Set(v.Get(), false)
 
 			mainScope.Data[k] = cell
@@ -1334,7 +1337,6 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 				return -value
 			}
 		}
-		println(value)
 		fmt.Printf("%T\n", value)
 		throw(inter.CurrentFileName, "Unable to use unary operator '-' on non-number value.", node.X, node.Y)
 	}
@@ -2012,7 +2014,9 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		}
 		fieldDecl.Func.Self = structObject
 
-		cell := &Cell{}
+		cell := &Cell{
+			Scope: inter.CurrentScope,
+		}
 		cell.Set(fieldDecl.Func, false)
 
 		methods[i] = &Method{
@@ -2032,7 +2036,9 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 
 		v := inter.GetNodeValueS(fieldNode.Value, fieldNode.Identifier.X, fieldNode.Identifier.Y)
 
-		cell := &Cell{}
+		cell := &Cell{
+			Scope: inter.CurrentScope,
+		}
 
 		switch v := v.(type) {
 		case []any:

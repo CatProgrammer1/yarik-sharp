@@ -364,7 +364,6 @@ func outputTokens(tokens []Token) {
 // *go run -race yks runinfo test.yks
 func main() { //*go run yks run test.yks
 	commands["build"] = func(args []string) {
-		//Lox
 		fmt.Println("Jly")
 	}
 	commands["run"] = func(args []string) {
