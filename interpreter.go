@@ -1434,10 +1434,10 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 
 			switch v := cell.Get().(type) {
 			case *FuncDec, *Structure:
-				throw(inter.CurrentFileName, "Cannot get a pointer of %s value", node.X, node.Y, getValueType(v))
+				throw(inter.CurrentFileName, "Cannot get a pointer of '%s' value", node.X, node.Y, getValueType(v))
 			}
 
-			return uintptr(cell.Ptr)
+			return uintptr(unsafe.Pointer(&cell.Ptr))
 		case *GetElementNode:
 			tableNode, keyNodes := inter.GetTableAndKeys(srcNode, []Node{})
 			if tableNode == nil {
