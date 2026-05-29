@@ -672,6 +672,16 @@ func (structure *Structure) IsAFunc(name string) bool {
 	return false
 }
 
+func (structure *Structure) CountMethods() int {
+	count := 0
+	for _, field := range structure.Fields {
+		if field.Func != nil {
+			count++
+		}
+	}
+	return count
+}
+
 type FieldDecl struct {
 	Identifier string
 	Method     bool
@@ -1340,7 +1350,6 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 
 	err := "Cannot perform binary operations on multiple values at the same time."
 
-	//fmt.Println(node.operator, node.L, node.R)
 	l, r := inter.GetNodeValue(node.L), inter.GetNodeValue(node.R)
 
 	returnL, ok := l.([]any)
@@ -2003,9 +2012,10 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 	}
 
 	fields := make([]*Field, len(structObjNode.Fields))
-	methods := make([]*Method, len(originalStructure.Fields))
+	methods := make([]*Method, originalStructure.CountMethods())
 
-	for i, fieldDecl := range originalStructure.Fields {
+	method_i := 0
+	for _, fieldDecl := range originalStructure.Fields {
 		if fieldDecl.Func == nil {
 			continue
 		}
@@ -2016,10 +2026,11 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		}
 		cell.Set(fieldDecl.Func, false)
 
-		methods[i] = &Method{
+		methods[method_i] = &Method{
 			Identifier: fieldDecl.Identifier,
 			Func:       cell,
 		}
+		method_i++
 	}
 
 	for i, fieldNode := range structObjNode.Fields {
