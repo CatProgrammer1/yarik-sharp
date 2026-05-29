@@ -3,7 +3,7 @@
 import "sys"
 import "tables"
 
-yar kernelReadFile, kernelWriteFile, kernelCreateFileW = kernel32("ReadFile"), kernel32("WriteFile"), kernel32("CreateFileW")
+yar kernelReadFile, kernelWriteFile, kernelCreateFileW, kernelCloseHandle = kernel32("ReadFile"), kernel32("WriteFile"), kernel32("CreateFileW"), kernel32("CloseHandle")
 
 struct File {
     h,
@@ -38,7 +38,7 @@ struct File {
         return err
     }
     func close() {
-        yar err = closehandle(this->h)
+        yar _, _, err = kernelCloseHandle(this->h)
 
         return err
     }

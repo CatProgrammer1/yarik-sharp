@@ -1828,8 +1828,6 @@ func (inter *Interpreter) CompleteBody(body []Node, isFunc, isLoop bool, addToSc
 		ident := addToScopeElem[0].(string)
 		value := addToScopeElem[1]
 
-		fmt.Printf("%s: %T\n", ident, value)
-
 		scope.Add(ident, value)
 	}
 
