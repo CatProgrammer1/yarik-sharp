@@ -100,6 +100,17 @@ var (
 			}
 			return nil
 		},
+
+		"sizeof": func(v ...any) []any {
+			argsCheck(v, 1, 1, "any")
+
+			v = v[BUILTIN_SPECIALS:]
+
+			a := v[0]
+
+			return []any{unsafe.Sizeof(a)}
+		},
+
 		"time": func(v ...any) []any {
 			return []any{time.Now().UnixMilli()}
 		},
