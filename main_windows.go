@@ -106,12 +106,20 @@ func getValueType(v any) string {
 		return "float"
 	case int64:
 		return "int"
-	case int, int32:
+	case int32:
 		return "int32"
 	case int16:
 		return "int16"
 	case int8:
 		return "int8"
+	case uint64:
+		return "uint"
+	case uint32:
+		return "uint32"
+	case uint16:
+		return "uint16"
+	case uint8:
+		return "uint8"
 	case bool:
 		return "bool"
 	case *Map:

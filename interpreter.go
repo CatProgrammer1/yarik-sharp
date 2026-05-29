@@ -232,11 +232,9 @@ func (cell *Cell) Set(value any, nonptr bool) {
 func (cell *Cell) Get() any {
 	switch cell.DataType {
 	case "int":
-		return cell.IntValue
-	case "uint":
-		return cell.UintValue
-	case "int32, int16, int8":
 		return toInt(cell.IntValue, -int(cell.Bits))
+	case "uint":
+		return toIntU(cell.UintValue, int(cell.Bits))
 	case "float":
 		if cell.Bits == 32 {
 			return float32(cell.FloatValue)
@@ -312,7 +310,7 @@ func anyToBytes(v []any, m *Map) []byte {
 
 	for i, x := range v {
 		switch t := x.(type) {
-		case int64:
+		case int64, int32, int16, int8, uint8, uint16, uint32, uint64:
 			prefix := "u"
 			layout := "int"
 			if m.Bits != 0 {
@@ -324,7 +322,7 @@ func anyToBytes(v []any, m *Map) []byte {
 				m.Layout[i] = layout
 				m.Pointers[i] = nil
 
-				binary.Write(buf, binary.LittleEndian, toInt(t, int(m.Bits)))
+				binary.Write(buf, binary.LittleEndian, toInt(toInt64(t), int(m.Bits)))
 				break
 			}
 
@@ -332,7 +330,7 @@ func anyToBytes(v []any, m *Map) []byte {
 			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, t)
-		case float64:
+		case float64, float32:
 			layout := "float"
 			if m.Bits != 0 {
 				layout = "int" + numtostr(m.Bits)
@@ -340,7 +338,7 @@ func anyToBytes(v []any, m *Map) []byte {
 				m.Layout[i] = layout
 				m.Pointers[i] = nil
 
-				binary.Write(buf, binary.LittleEndian, ftoInt(t, int(m.Bits)))
+				binary.Write(buf, binary.LittleEndian, ftoInt(mustNTOF64(t), int(m.Bits)))
 				break
 			}
 
@@ -916,10 +914,31 @@ func toInt(v int64, bits int) any {
 		return int32(v)
 	case -64:
 		return int64(v)
-	case 0:
-		return v
 	default:
-		panic("invalid bit size")
+		return v
+	}
+}
+
+func toIntU(v uint64, bits int) any {
+	switch bits {
+	case 8:
+		return uint8(v)
+	case 16:
+		return uint16(v)
+	case 32:
+		return uint32(v)
+	case 64:
+		return uint64(v)
+	case -8:
+		return int8(v)
+	case -16:
+		return int16(v)
+	case -32:
+		return int32(v)
+	case -64:
+		return int64(v)
+	default:
+		return v
 	}
 }
 
@@ -933,10 +952,8 @@ func ftoInt(v float64, bits int) any {
 		return int32(v)
 	case 64:
 		return int64(v)
-	case 0:
-		return v
 	default:
-		panic("invalid bit size")
+		return v
 	}
 }
 

@@ -136,7 +136,7 @@ var (
 			bits := toInt64(b)
 
 			switch n := a.(type) {
-			case int64, int32, int16, int8:
+			case int64, int32, int16, int8, uint8, uint16, uint32, uint64:
 				return toInt(toInt64(n), int(bits))
 			case float64:
 				switch bits {
