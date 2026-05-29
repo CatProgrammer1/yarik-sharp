@@ -205,18 +205,6 @@ var (
 				m,
 			}
 		},
-
-		"closehandle": func(v ...any) []any {
-			argsCheck(v, 1, 1, "ptr")
-
-			v = v[BUILTIN_SPECIALS:]
-
-			ptr := v[0].(uintptr)
-
-			err := syscall.CloseHandle(syscall.Handle(ptr))
-
-			return []any{err}
-		},
 	}
 )
 
