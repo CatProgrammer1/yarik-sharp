@@ -3,7 +3,7 @@
 import "sys"
 import "tables"
 
-yar kernelReadFile, kernelCreateFileW = kernel32("ReadFile"), kernel32("CreateFileW")
+yar kernelReadFile, kernelWriteFile, kernelCreateFileW = kernel32("ReadFile"), kernel32("WriteFile"), kernel32("CreateFileW")
 
 struct File {
     h,
@@ -12,16 +12,30 @@ struct File {
             buf = make(1024, 0, 8)
         }
 
-        yar bytesRead = 0
-
-        yar r1, r2, err = kernelReadFile(
+        yar _, _, err = kernelReadFile(
             this->h,
             buf,
             len(buf),
-            &bytesRead,
-            void)
+            void,
+            void
+        )
 
         return buf, err
+    }
+     func write(buf) {
+        if buf == void {
+            throw("Write buffer cannot be a 'void' value")
+        }
+
+        yar _, _, err = kernelWriteFile(
+            this->h,
+            buf,
+            len(buf),
+            void,
+            void
+        )
+
+        return err
     }
     func close() {
         yar err = closehandle(this->h)

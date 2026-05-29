@@ -29,6 +29,8 @@ type ExternalTask struct {
 
 	ArgsValues [][]Node
 
+	Inter *Interpreter
+
 	FuncCall *FuncCall
 }
 
@@ -1747,6 +1749,8 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 		task := ExternalTask{
 			Addr: funcDec,
 
+			Inter: inter,
+
 			ArgsValues: argsValues,
 
 			FuncCall: node,
@@ -1803,7 +1807,7 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 			addToScope = [][2]any{{selfKeyword, funcDec.Self}}
 		}
 
-		_, _, value := inter.CompeleteBody(body, true, false, addToScope...)
+		_, _, value := inter.CompleteBody(body, true, false, addToScope...)
 
 		return value
 	default:
@@ -1812,7 +1816,7 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 	}
 }
 
-func (inter *Interpreter) CompeleteBody(body []Node, isFunc, isLoop bool, addToScope ...[2]any) (end, skip bool, value []any) {
+func (inter *Interpreter) CompleteBody(body []Node, isFunc, isLoop bool, addToScope ...[2]any) (end, skip bool, value []any) {
 	scope := NewScope(inter, inter.CurrentScope)
 	scope.IsFunc = isFunc
 	scope.IsLoop = isLoop
@@ -1823,6 +1827,8 @@ func (inter *Interpreter) CompeleteBody(body []Node, isFunc, isLoop bool, addToS
 	for _, addToScopeElem := range addToScope {
 		ident := addToScopeElem[0].(string)
 		value := addToScopeElem[1]
+
+		fmt.Printf("%s: %T\n", ident, value)
 
 		scope.Add(ident, value)
 	}
@@ -2178,7 +2184,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 	case *IfStmt:
 		result := inter.GetNodeValueS(node.Condition, node.X, node.Y)
 		if result == true {
-			return inter.CompeleteBody(node.Body, false, false)
+			return inter.CompleteBody(node.Body, false, false)
 		} else if result == false && node.Else != nil {
 			return inter.CompleteNode(node.Else)
 		}
@@ -2186,12 +2192,12 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		if len(node.Condition) > 0 {
 			result := inter.GetNodeValueS(node.Condition, node.X, node.Y)
 			if result == true {
-				return inter.CompeleteBody(node.Body, false, false)
+				return inter.CompleteBody(node.Body, false, false)
 			} else if result == false && node.Else != nil {
 				return inter.CompleteNode(node.Else)
 			}
 		} else {
-			return inter.CompeleteBody(node.Body, false, false)
+			return inter.CompleteBody(node.Body, false, false)
 		}
 	case *ContinueNode:
 		return false, true, nil
@@ -2243,7 +2249,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		return false, false, nil
 	case *WhileNode:
 		for cond := inter.GetNodeValueS(node.Condition, node.X, node.Y); cond == true; cond = inter.GetNodeValueS(node.Condition, node.X, node.Y) {
-			end, skip, value := inter.CompeleteBody(node.Body, false, true)
+			end, skip, value := inter.CompleteBody(node.Body, false, true)
 			if skip {
 				continue
 			} else if end || value != nil {
@@ -2257,7 +2263,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		switch cycleValue := cycleValue.(type) {
 		case *Map:
 			for key, value := range cycleValue.AllFromFront() {
-				end, skip, returnValue := inter.CompeleteBody(node.Body, false, true, [2]any{keyIdent.Value, key}, [2]any{valueIdent.Value, value.Get()})
+				end, skip, returnValue := inter.CompleteBody(node.Body, false, true, [2]any{keyIdent.Value, key}, [2]any{valueIdent.Value, value.Get()})
 
 				if skip {
 					continue
@@ -2282,7 +2288,9 @@ func (inter *Interpreter) Complete(logenv bool) map[any]*Cell { //go run yks run
 		defer runtime.UnlockOSThread()
 
 		for externalTaskArgs := range externalCallingChan {
-			r1, r2, err := syscallAddress(inter, externalTaskArgs.FuncCall, uint(len(externalTaskArgs.FuncCall.Arguments)), externalTaskArgs.ArgsValues, externalTaskArgs.Addr)
+			taskInter := externalTaskArgs.Inter
+
+			r1, r2, err := syscallAddress(taskInter, externalTaskArgs.FuncCall, uint(len(externalTaskArgs.FuncCall.Arguments)), externalTaskArgs.ArgsValues, externalTaskArgs.Addr)
 
 			externalCallFinished <- ExternalTaskResult{
 				r1, r2, err,

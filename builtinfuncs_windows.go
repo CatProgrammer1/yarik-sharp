@@ -289,15 +289,11 @@ func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]
 		params[i] = ptr
 		i++
 	}
-	//println("debug 2 ended")
-
-	//println("debug 3", addr, node)
 
 	r1, r2, err := syscall.SyscallN(addr, params...)
 	runtime.KeepAlive(params)
 	runtime.KeepAlive(buffers)
 	runtime.KeepAlive(args)
-	//println("debug 3 ended")
 
 	refreshPointerValues(inter, params)
 
