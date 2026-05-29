@@ -107,6 +107,10 @@ var (
 			v = v[BUILTIN_SPECIALS:]
 
 			a := v[0]
+			switch v := a.(type) {
+			case *Map:
+				a = v.Mem
+			}
 
 			return []any{unsafe.Sizeof(a)}
 		},
