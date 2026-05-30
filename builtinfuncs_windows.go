@@ -194,6 +194,7 @@ var (
 		"bytes": func(v ...any) []any {
 			argsCheck(v, 1, 1, "string")
 
+			x, y := v[0].(int), v[1].(int)
 			inter := v[2].(*Interpreter)
 
 			v = v[BUILTIN_SPECIALS:]
@@ -212,7 +213,7 @@ var (
 			}
 
 			for i, v := range slice {
-				m.Set(int64(i), CLPTR(inter.CurrentScope, int64(v)))
+				m.Set(int64(i), CLPTR(inter.CurrentScope, int64(v), x, y))
 			}
 			m.ToMemory()
 
@@ -223,7 +224,7 @@ var (
 	}
 )
 
-func refreshPointerValues(inter *Interpreter, ptrs []uintptr) {
+func refreshPointerValues(inter *Interpreter, ptrs []uintptr, x, y int) {
 	for _, ptr := range ptrs {
 		value := inter.CurrentScope.GetCellWithAddress(unsafe.Pointer(ptr))
 		if value == nil {
@@ -234,9 +235,9 @@ func refreshPointerValues(inter *Interpreter, ptrs []uintptr) {
 		case *StructObject:
 			layout := value.Layout()
 
-			value.FromMemoryLayout(layout)
+			value.FromMemoryLayout(layout, x, y)
 		case *Map:
-			value.FromMemory()
+			value.FromMemory(x, y)
 		}
 	}
 }
@@ -249,6 +250,8 @@ func valueToPtr(inter *Interpreter, v any, x, y int) (uintptr, any) {
 		return uintptr(math.Float32bits(val)), val
 	case int64, int32, int16, int8:
 		return uintptr(toInt64(val)), val
+	case uint64, uint32, uint16, uint8:
+		return uintptr(toUint64(val)), val
 	case uintptr:
 		return val, nil
 	case unsafe.Pointer:
@@ -270,6 +273,7 @@ func valueToPtr(inter *Interpreter, v any, x, y int) (uintptr, any) {
 		return 0, nil
 	default:
 		fmt.Printf("%T\n", val)
+		println(val)
 		throw(inter.CurrentFileName, "Unsupported type, unable to get pointer address.", x, y)
 	}
 	return 0, nil
@@ -298,7 +302,7 @@ func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]
 	runtime.KeepAlive(buffers)
 	runtime.KeepAlive(args)
 
-	refreshPointerValues(inter, params)
+	refreshPointerValues(inter, params, node.Position(), node.Line())
 
 	return r1, r2, error(err)
 }

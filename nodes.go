@@ -32,6 +32,7 @@ func (identNode *IdentNode) Line() int {
 type VarDec struct {
 	Value      [][]Node
 	Identifier []IdentNode
+	DataTypes []IdentNode
 	Argument   bool //Interpreter only
 	X, Y       int
 }

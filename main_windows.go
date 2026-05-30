@@ -20,6 +20,14 @@ func floatIsInt(f float64) bool {
 	return math.Trunc(f) == f
 }
 
+func twoDigitStr(str string) int {
+	if len(str) < 2 {
+		return int(str[0] - '0')
+	}
+
+	return int(str[0]-'0')*10 + int(str[1]-'0')
+}
+
 func argsCheck(v []any, min, max int, expectedDataTypes ...string) {
 	if min == 0 && max == 0 {
 		return
@@ -95,37 +103,37 @@ func mustNTOF64(n any) float64 {
 }
 
 func getValueType(v any) string {
-	switch v.(type) {
+	switch v := v.(type) {
 	case nil:
 		return "void"
 	case string:
 		return "string"
 	case float32:
-		return "float32"
+		return "f32"
 	case float64:
-		return "float"
+		return "f64"
 	case int64:
-		return "int"
+		return "i64"
 	case int32:
-		return "int32"
+		return "i32"
 	case int16:
-		return "int16"
+		return "i16"
 	case int8:
-		return "int8"
+		return "i8"
 	case uint64:
-		return "uint"
+		return "u64"
 	case uint32:
-		return "uint32"
+		return "u32"
 	case uint16:
-		return "uint16"
+		return "u16"
 	case uint8:
-		return "uint8"
+		return "u8"
 	case bool:
 		return "bool"
 	case *Map:
 		return "table"
 	case *StructObject:
-		return "instance"
+		return instanceTypePrefix + v.Identifier
 	case *Structure:
 		return "structure"
 	case *FuncDec:
@@ -161,10 +169,6 @@ func checkDataType(expected string, v any) bool {
 		}
 
 		return false
-	case "m_int":
-		_, ok := v.(int64)
-
-		return ok
 	case "int":
 		switch v.(type) {
 		case int64, int32, int16, int8, uint8, uint16, uint32, uint64:
@@ -299,7 +303,7 @@ func loadLibraryIntoScope(interpreter_filename string, importPath string, node *
 		throw(interpreter_filename, err.Error(), node.X, node.Y)
 	}
 
-	suc := scope.Add(library, "DLL_LIBRARY")
+	suc := scope.Add(library, "DLL_LIBRARY", "string", node.X, node.Y)
 	if !suc {
 		throwNoPos("unsuccessfull")
 	}
@@ -324,14 +328,14 @@ func loadLibraryIntoScope(interpreter_filename string, importPath string, node *
 				throw(interpreter_filename, err.Error(), x, y)
 			}
 
-			suc := scope.Add(proc, "DLL_PROC")
+			suc := scope.Add(proc, "DLL_PROC", "string", x, y)
 			if !suc {
 				throwNoPos("unsuccessfull")
 			}
 
 			return []any{proc.Addr()}
 		},
-	})
+	}, node.X, node.Y)
 }
 
 func run(fileAbs, fileRel string, info bool) map[any]*Cell {

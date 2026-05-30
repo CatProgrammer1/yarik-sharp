@@ -1161,6 +1161,12 @@ VARPAR:
 
 			varDec.Identifier = append(varDec.Identifier, IdentNode{token.Value.(string), x, y})
 
+			parser.Next("ident")
+
+			token = parser.CurrentToken
+
+			varDec.DataTypes = append(varDec.DataTypes, IdentNode{token.Value.(string), x, y})
+
 			parser.Next()
 
 			token = parser.CurrentToken

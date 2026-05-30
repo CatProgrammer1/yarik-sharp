@@ -22,6 +22,24 @@ var (
 	externalCallingChan = make(chan ExternalTask, 20048) //Вибачайте, але прийдеться через костилі
 
 	externalCallFinished = make(chan ExternalTaskResult, 10000)
+
+	dataTypes = []string{
+		"i64",
+		"i32",
+		"i16",
+		"i8",
+		"u64",
+		"u32",
+		"u16",
+		"u8",
+
+		"f64",
+		"f32",
+
+		"bool",
+		"string",
+		"table",
+	}
 )
 
 type ExternalTask struct {
@@ -50,9 +68,16 @@ type Scope struct {
 }
 
 type Cell struct {
-	IntValue      int64
-	UintValue     uint64
-	FloatValue    float64
+	Int64         int64
+	Int32         int32
+	Int16         int16
+	Int8          int8
+	Uint8         uint8
+	Uint16        uint16
+	Uint32        uint32
+	Uint64        uint64
+	Float64       float64
+	Float32       float32
 	BoolValue     bool
 	StringValue   string
 	StructValue   *Structure
@@ -71,89 +96,198 @@ type Cell struct {
 	Scope *Scope
 }
 
-func (cell *Cell) Set(value any, nonptr bool) {
-	switch value := value.(type) {
-	case int64:
-		cell.IntValue = value
-		cell.DataType = "int"
+func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int) {
+	cell.Clear()
+	cell.DataType = dataType
+
+	switch dataType {
+	case "i8", "i16", "i32", "i64":
+		bits := uint8(twoDigitStr(dataType[1:]))
+
+		if !checkType[int64](value) {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		switch bits {
+		case 8:
+			cell.Set(int8(value.(int64)), false, x, y)
+		case 16:
+			cell.Set(int16(value.(int64)), false, x, y)
+		case 32:
+			cell.Set(int32(value.(int64)), false, x, y)
+		case 64:
+			cell.Set(int64(value.(int64)), false, x, y)
+		}
+	case "u8", "u16", "u32", "u64":
+		bits := uint8(twoDigitStr(dataType[1:]))
+
+		if !checkType[int64](value) {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		switch bits {
+		case 8:
+			cell.Set(uint8(value.(int64)), false, x, y)
+		case 16:
+			cell.Set(uint16(value.(int64)), false, x, y)
+		case 32:
+			cell.Set(uint32(value.(int64)), false, x, y)
+		case 64:
+			cell.Set(uint64(value.(int64)), false, x, y)
+		}
+	case "f32", "f64":
+		bits := uint8(twoDigitStr(dataType[1:]))
+
+		if !checkType[float64](value) {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		cell.Bits = bits
+
+		if bits == 32 {
+			cell.Set(float32(value.(float64)), false, x, y)
+		} else {
+			cell.Set(value.(float64), false, x, y)
+		}
+	case "bool":
+		if !checkType[bool](value) {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		cell.Set(value.(bool), false, x, y)
+	case "ptr":
+		if !checkType[uintptr](value) {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		cell.Set(value.(uintptr), false, x, y)
+	case "string":
+		if !checkType[string](value) {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		cell.Set(value.(string), false, x, y)
+	case "func":
+		if !checkType[*FuncDec](value) {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		cell.Set(value.(*FuncDec), false, x, y)
+	case "struct":
+		if !checkType[*Structure](value) {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		cell.Set(value.(*Structure), false, x, y)
+	case "table":
+		if !checkType[*Map](value) {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		cell.Set(value.(*Map), false, x, y)
+	case "error":
+		if !checkType[error](value) {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		cell.Set(value.(error), false, x, y)
+	case "void":
+		if value != nil {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		cell.Set(nil, false, x, y)
+	default:
+		if strings.HasPrefix(cell.DataType, instanceTypePrefix) {
+			if !checkType[*StructObject](value) {
+				throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+			}
+
+			cell.Set(value, false, x, y)
+			return
+		}
+		panic("Oh my gosh noooo")
+	}
+}
+
+func (cell *Cell) Set(value any, nonptr bool, x, y int) {
+	if cell.DataType != "" && cell.DataType != "any" && getValueType(value) != cell.DataType {
+		throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+	}
+
+	if cell.DataType == "" {
+		cell.DataType = getValueType(value)
+	}
+
+	switch cell.DataType {
+	case "i64":
+		cell.Int64 = value.(int64)
 		cell.Bits = 64
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.IntValue)
+			cell.Ptr = unsafe.Pointer(&cell.Int64)
 		}
-	case int32:
-		cell.IntValue = int64(value)
-		cell.DataType = "int"
+	case "i32":
+		cell.Int32 = value.(int32)
 		cell.Bits = 32
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.IntValue)
+			cell.Ptr = unsafe.Pointer(&cell.Int32)
 		}
-	case int16:
-		cell.IntValue = int64(value)
-		cell.DataType = "int"
+	case "i16":
+		cell.Int16 = value.(int16)
 		cell.Bits = 16
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.IntValue)
+			cell.Ptr = unsafe.Pointer(&cell.Int16)
 		}
-	case int8:
-		cell.IntValue = int64(value)
-		cell.DataType = "int"
+	case "i8":
+		cell.Int8 = value.(int8)
 		cell.Bits = 8
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.IntValue)
+			cell.Ptr = unsafe.Pointer(&cell.Int8)
 		}
-	case uint64:
-		cell.UintValue = value
-		cell.DataType = "uint"
+	case "u64":
+		cell.Uint64 = value.(uint64)
 		cell.Bits = 64
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.UintValue)
+			cell.Ptr = unsafe.Pointer(&cell.Uint64)
 		}
-	case uint32:
-		cell.UintValue = uint64(value)
-		cell.DataType = "uint"
+	case "u32":
+		cell.Uint32 = value.(uint32)
+		cell.DataType = "u32"
 		cell.Bits = 32
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.UintValue)
+			cell.Ptr = unsafe.Pointer(&cell.Uint32)
 		}
-	case uint16:
-		cell.UintValue = uint64(value)
-		cell.DataType = "uint"
+	case "u16":
+		cell.Uint16 = value.(uint16)
 		cell.Bits = 16
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.UintValue)
+			cell.Ptr = unsafe.Pointer(&cell.Uint16)
 		}
-	case uint8:
-		cell.UintValue = uint64(value)
-		cell.DataType = "uint"
+	case "u8":
+		cell.Uint8 = value.(uint8)
 		cell.Bits = 8
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.UintValue)
+			cell.Ptr = unsafe.Pointer(&cell.Uint8)
 		}
-	case float64:
-		cell.FloatValue = value
-		cell.DataType = "float"
+	case "f64":
+		cell.Float64 = value.(float64)
 		cell.Bits = 64
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.FloatValue)
+			cell.Ptr = unsafe.Pointer(&cell.Float64)
 		}
-	case float32:
-		cell.FloatValue = float64(value)
-		cell.DataType = "float"
+	case "f32":
+		cell.Float32 = value.(float32)
 		cell.Bits = 32
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.FloatValue)
+			cell.Ptr = unsafe.Pointer(&cell.Float32)
 		}
-	case bool:
-		cell.BoolValue = value
-		cell.Bits = 0
-		cell.DataType = "bool"
+	case "bool":
+		cell.BoolValue = value.(bool)
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(&cell.BoolValue)
 		}
-	case string:
-		cell.Bits = 0
-		cell.StringValue = value
-		cell.DataType = "string"
+	case "string":
+		cell.StringValue = value.(string)
 
 		ptr, buf := valueToPtr(cell.Scope.Interpreter, cell.StringValue, 0, 0)
 		cell.TempBuf = buf
@@ -161,91 +295,131 @@ func (cell *Cell) Set(value any, nonptr bool) {
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(ptr)
 		}
-	case *StructObject:
-		cell.Bits = 0
-		cell.InstanceValue = value
-		cell.DataType = "instance"
+	case "struct":
+		structure := value.(*Structure)
+
+		cell.StructValue = structure
 
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(value.Address())
+			cell.Ptr = unsafe.Pointer(structure)
 		}
-	case *Structure:
+	case "func":
+		function := value.(*FuncDec)
+
 		cell.Bits = 0
-		cell.StructValue = value
-		cell.DataType = "struct"
+		cell.FuncValue = function
 
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(value)
+			cell.Ptr = unsafe.Pointer(function)
 		}
-	case *FuncDec:
+	case "table":
+		table := value.(*Map)
+
 		cell.Bits = 0
-		cell.FuncValue = value
-		cell.DataType = "func"
+		cell.TableValue = table
+
+		table.ToMemory()
 
 		if !nonptr {
-			cell.Ptr = unsafe.Pointer(value)
+			cell.Ptr = unsafe.Pointer(table.Address())
 		}
-	case *Map:
-		cell.Bits = 0
-		cell.TableValue = value
-		cell.DataType = "table"
-
-		value.ToMemory()
-
-		if !nonptr {
-			cell.Ptr = unsafe.Pointer(value.Address())
-		}
-	case unsafe.Pointer:
+	case "ptr":
 		cell.Bits = 64
-		cell.PtrValue = uintptr(value)
-		cell.DataType = "ptr"
+		cell.PtrValue = value.(uintptr)
 
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(&cell.PtrValue)
 		}
-	case uintptr:
-		cell.Bits = 64
-		cell.PtrValue = value
-		cell.DataType = "ptr"
-		if !nonptr {
-			cell.Ptr = unsafe.Pointer(&cell.PtrValue)
-		}
-	case error:
+	case "error":
 		cell.Bits = 0
-		cell.ErrorValue = value
-		cell.DataType = "error"
+		cell.ErrorValue = value.(error)
 
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(&cell.ErrorValue)
 		}
-	case nil:
-		cell.Bits = 0
-		cell.DataType = "nil"
-		cell.Ptr = nil
+	case "void":
+		cell.Clear()
 	default:
+		if strings.HasPrefix(cell.DataType, instanceTypePrefix) {
+			instance := value.(*StructObject)
+
+			cell.InstanceValue = instance
+
+			if !nonptr {
+				cell.Ptr = unsafe.Pointer(instance.Address())
+			}
+			return
+		}
 		fmt.Println(value)
 		fmt.Printf("%T\n", value)
 		panic("Unsupported type in Cell.Set")
 	}
 }
 
+func (cell *Cell) Clear() {
+	cell.Bits = 0
+	cell.BoolValue = false
+	cell.ErrorValue = nil
+	cell.Float32 = 0
+	cell.Float64 = 0
+	cell.FuncValue = nil
+	cell.InstanceValue = nil
+	cell.Int8 = 0
+	cell.Int16 = 0
+	cell.Int32 = 0
+	cell.Int64 = 0
+	cell.Uint8 = 0
+	cell.Uint16 = 0
+	cell.Uint32 = 0
+	cell.Uint64 = 0
+	cell.PtrValue = 0
+	cell.StringValue = ""
+	cell.StructValue = nil
+	cell.TableValue = nil
+	cell.TempBuf = nil
+
+	cell.Ptr = nil
+
+	cell.DataType = ""
+}
+
 func (cell *Cell) Get() any {
 	switch cell.DataType {
-	case "int":
-		return toInt(cell.IntValue, -int(cell.Bits))
-	case "uint":
-		return toIntU(cell.UintValue, int(cell.Bits))
-	case "float":
-		if cell.Bits == 32 {
-			return float32(cell.FloatValue)
+	case "i8", "i16", "i32", "i64":
+		bits := cell.Bits
+
+		switch bits {
+		case 8:
+			return cell.Int8
+		case 16:
+			return cell.Int16
+		case 32:
+			return cell.Int32
+		case 64:
+			return cell.Int64
 		}
-		return cell.FloatValue
+	case "u8", "u16", "u32", "u64":
+		bits := cell.Bits
+
+		switch bits {
+		case 8:
+			return cell.Uint8
+		case 16:
+			return cell.Uint16
+		case 32:
+			return cell.Uint32
+		case 64:
+			return cell.Uint64
+		}
+	case "f32", "f64":
+		if cell.Bits == 32 {
+			return cell.Float32
+		}
+		return cell.Float64
 	case "bool":
 		return cell.BoolValue
 	case "string":
 		return cell.StringValue
-	case "instance":
-		return cell.InstanceValue
 	case "struct":
 		return cell.StructValue
 	case "table":
@@ -259,31 +433,25 @@ func (cell *Cell) Get() any {
 	case "nil":
 		return nil
 	default:
-		fmt.Println(cell.DataType)
-		panic("Unsupported type in Cell.Get")
+		if cell.InstanceValue == nil {
+			panic("Omagash")
+		}
+
+		return cell.InstanceValue
 	}
+	panic("Idk")
 }
 
 func (cell *Cell) GetAddress() unsafe.Pointer {
 	return cell.Ptr
 }
 
-func CLPTR(scope *Scope, v any) *Cell {
+func CLPTR(scope *Scope, v any, x, y int) *Cell {
 	cell := &Cell{
 		Scope: scope,
 	}
 
-	cell.Set(v, false)
-
-	return cell
-}
-
-func CL(scope *Scope, v any) Cell {
-	cell := Cell{
-		Scope: scope,
-	}
-
-	cell.Set(v, true)
+	cell.Set(v, false, x, y)
 
 	return cell
 }
@@ -332,13 +500,21 @@ func anyToBytes(v []any, m *Map) []byte {
 			binary.Write(buf, binary.LittleEndian, t)
 		case float64, float32:
 			layout := "float"
-			if m.Bits != 0 {
-				layout = "int" + numtostr(m.Bits)
+			if m.Bits == 32 {
+				layout = "float32"
 
 				m.Layout[i] = layout
 				m.Pointers[i] = nil
 
-				binary.Write(buf, binary.LittleEndian, ftoInt(mustNTOF64(t), int(m.Bits)))
+				binary.Write(buf, binary.LittleEndian, float32(mustNTOF64(t)))
+				break
+			} else if m.Bits == 64 {
+				layout = "float64"
+
+				m.Layout[i] = layout
+				m.Pointers[i] = nil
+
+				binary.Write(buf, binary.LittleEndian, mustNTOF64(t))
 				break
 			}
 
@@ -466,8 +642,13 @@ func bytesToAny(mem []byte, layout []string, pointers []any) []any {
 
 			res[i] = uintptr(v)
 		//Unsigned end!
-		case "float":
+		case "float", "float64":
 			var v float64
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res[i] = v
+		case "float32":
+			var v float32
 			binary.Read(r, binary.LittleEndian, &v)
 
 			res[i] = v
@@ -511,12 +692,12 @@ func (m *Map) ToMemory() {
 	}
 }
 
-func (m *Map) FromMemory() {
+func (m *Map) FromMemory(x, y int) {
 	s := bytesToAny(m.Mem, m.Layout, m.Pointers)
 	//ASDDADS
 	i := 0
 	for _, value := range m.AllFromFront() {
-		value.Set(s[i], false)
+		value.Set(s[i], false, x, y)
 		i++
 	}
 }
@@ -553,14 +734,14 @@ func ptrToAny(v any) unsafe.Pointer {
 	return *(*unsafe.Pointer)(unsafe.Pointer(&v))
 }
 
-func (scope *Scope) Add(key, value any) (success bool) {
+func (scope *Scope) Add(key, value any, dataType string, x, y int) (success bool) {
 	if key == "_" {
 		return true
 	}
 	cell := &Cell{
 		Scope: scope,
 	}
-	cell.Set(value, false)
+	cell.InitFromRaw(value, dataType, false, x, y)
 
 	scope.Data[key] = cell
 	scope.Pointers[cell.Ptr] = cell
@@ -599,7 +780,7 @@ func (scope *Scope) Set(key, value any, x, y int) (success bool) {
 		if cell.Ptr != nil {
 			delete(scope.Pointers, cell.Ptr)
 		}
-		cell.Set(value, false)
+		cell.Set(value, false, x, y)
 
 		return true
 	} else if scope.Parent != nil {
@@ -799,7 +980,7 @@ func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 	return mem
 }
 
-func (s *StructObject) FromMemoryLayout(layout []FieldLayout) {
+func (s *StructObject) FromMemoryLayout(layout []FieldLayout, x, y int) {
 	if s.LastMem == nil {
 		return
 	}
@@ -811,43 +992,43 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout) {
 		switch lf.Type {
 		case "int8":
 			v := int8(mem[offset])
-			s.Set(lf.Name, int64(v))
+			s.Set(lf.Name, int64(v), x, y)
 
 		case "uint8":
 			v := mem[offset]
-			s.Set(lf.Name, int64(v))
+			s.Set(lf.Name, int64(v), x, y)
 
 		case "int16":
 			v := int16(binary.LittleEndian.Uint16(mem[offset:]))
-			s.Set(lf.Name, int64(v))
+			s.Set(lf.Name, int64(v), x, y)
 
 		case "uint16":
 			v := binary.LittleEndian.Uint16(mem[offset:])
-			s.Set(lf.Name, int64(v))
+			s.Set(lf.Name, int64(v), x, y)
 
 		case "int32":
 			v := int32(binary.LittleEndian.Uint32(mem[offset:]))
-			s.Set(lf.Name, int64(v))
+			s.Set(lf.Name, int64(v), x, y)
 
 		case "uint32":
 			v := binary.LittleEndian.Uint32(mem[offset:])
-			s.Set(lf.Name, int64(v))
+			s.Set(lf.Name, int64(v), x, y)
 
 		case "int64":
 			v := int64(binary.LittleEndian.Uint64(mem[offset:]))
-			s.Set(lf.Name, v)
+			s.Set(lf.Name, v, x, y)
 
 		case "uint64", "uintptr", "ptr":
 			v := binary.LittleEndian.Uint64(mem[offset:])
-			s.Set(lf.Name, uintptr(v))
+			s.Set(lf.Name, uintptr(v), x, y)
 
 		case "float":
 			bits := binary.LittleEndian.Uint64(mem[offset:])
 			v := math.Float64frombits(bits)
-			s.Set(lf.Name, v)
+			s.Set(lf.Name, v, x, y)
 		case "bool":
 			v := mem[offset]
-			s.Set(lf.Name, v == 1)
+			s.Set(lf.Name, v == 1, x, y)
 		/*case "instance":
 		ptr := binary.LittleEndian.Uint64(mem[offset:])
 		if ptr == 0 {
@@ -882,7 +1063,7 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout) {
 			copy(subMem, mem[offset:offset+int(subSize)])
 
 			sub.LastMem = subMem
-			sub.FromMemoryLayout(subLayout)
+			sub.FromMemoryLayout(subLayout, x, y)
 		default:
 			panic("Unsupported field type " + lf.Type)
 		}
@@ -919,7 +1100,7 @@ func toInt(v int64, bits int) any {
 	}
 }
 
-func toIntU(v uint64, bits int) any {
+func toUint(v uint64, bits int) any {
 	switch bits {
 	case 8:
 		return uint8(v)
@@ -1140,11 +1321,11 @@ func (structObj *StructObject) CheckFormat(format ...[2]string) bool {
 	return true
 }
 
-func (structObj *StructObject) Set(fieldName string, value any) bool {
+func (structObj *StructObject) Set(fieldName string, value any, x, y int) bool {
 	for _, field := range structObj.Fields {
 		cell := field.Value
 		if field.Identifier == fieldName {
-			cell.Set(value, false)
+			cell.Set(value, false, x, y)
 
 			return true
 		}
@@ -1226,7 +1407,7 @@ func format(v ...any) string {
 	return formated
 }
 
-func importModule(path string, mainScope *Scope) {
+func importModule(path string, mainScope *Scope, x, y int) {
 	if !strings.HasSuffix(path, fileType) {
 		path += fileType
 	}
@@ -1264,7 +1445,7 @@ func importModule(path string, mainScope *Scope) {
 			cell := &Cell{
 				Scope: mainScope,
 			}
-			cell.Set(v.Get(), false)
+			cell.Set(v.Get(), false, x, y)
 
 			mainScope.Data[k] = cell
 			mainScope.Pointers[cell.Ptr] = cell
@@ -1562,7 +1743,7 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 			if index+1 < len(keys) {
 				throw(inter.CurrentFileName, "Attempt to index non-table value.", getElemN.X, getElemN.Y)
 			} else {
-				return CLPTR(inter.CurrentScope, nil).Get()
+				return nil
 			}
 		}
 
@@ -1609,7 +1790,7 @@ func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *Ge
 			if index+1 < len(keys) {
 				throw(inter.CurrentFileName, "Attempt to index non-table value.", getElemN.X, getElemN.Y)
 			} else {
-				return CLPTR(inter.CurrentScope, nil)
+				return CLPTR(inter.CurrentScope, nil, getElemN.X, getElemN.Y)
 			}
 		}
 
@@ -1727,9 +1908,9 @@ func (inter *Interpreter) GetMap(node *MapNode) *Map {
 				throw(inter.CurrentFileName, "Cannot assign a field cannot be an empty value.", element.X, element.Y)
 			}
 
-			m.Set(key, CLPTR(inter.CurrentScope, values[0]))
+			m.Set(key, CLPTR(inter.CurrentScope, values[0], element.X, element.Y))
 		} else {
-			m.Set(key, CLPTR(inter.CurrentScope, value))
+			m.Set(key, CLPTR(inter.CurrentScope, value, element.X, element.Y))
 		}
 	}
 
@@ -1817,11 +1998,13 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 			},
 		}
 
-		addToScope := [][2]any{}
+		addToScope := [][3]any{}
 
 		body = slices.Concat(argsBody, body)
 		if funcDec.Self != nil {
-			addToScope = [][2]any{{selfKeyword, funcDec.Self}}
+			addToScope = [][3]any{
+				{selfKeyword, funcDec.Self, instanceTypePrefix + funcDec.Self.Identifier},
+			}
 		}
 
 		_, _, value := inter.CompleteBody(body, true, false, addToScope...)
@@ -1833,7 +2016,7 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 	}
 }
 
-func (inter *Interpreter) CompleteBody(body []Node, isFunc, isLoop bool, addToScope ...[2]any) (end, skip bool, value []any) {
+func (inter *Interpreter) CompleteBody(body []Node, isFunc, isLoop bool, addToScope ...[3]any) (end, skip bool, value []any) {
 	scope := NewScope(inter, inter.CurrentScope)
 	scope.IsFunc = isFunc
 	scope.IsLoop = isLoop
@@ -1844,8 +2027,9 @@ func (inter *Interpreter) CompleteBody(body []Node, isFunc, isLoop bool, addToSc
 	for _, addToScopeElem := range addToScope {
 		ident := addToScopeElem[0].(string)
 		value := addToScopeElem[1]
+		dataType := addToScopeElem[2].(string)
 
-		scope.Add(ident, value)
+		scope.Add(ident, value, dataType, -1, -1)
 	}
 
 	for _, node := range body {
@@ -1870,7 +2054,7 @@ func (inter *Interpreter) CompleteBody(body []Node, isFunc, isLoop bool, addToSc
 	return false, false, nil
 }
 
-func (inter *Interpreter) SetTableElementValue(table *Map, keys []any, value any, index int) {
+func (inter *Interpreter) SetTableElementValue(table *Map, keys []any, value any, index int, x, y int) {
 	if index >= len(keys) {
 		return
 	}
@@ -1882,20 +2066,20 @@ func (inter *Interpreter) SetTableElementValue(table *Map, keys []any, value any
 		switch elem := elem.Value.Get().(type) {
 		case *Map:
 			if index+1 >= len(keys) {
-				table.Set(key, CLPTR(inter.CurrentScope, value))
+				table.Set(key, CLPTR(inter.CurrentScope, value, x, y))
 
 				elem.ToMemory()
 				break
 			}
-			inter.SetTableElementValue(elem, keys, value, index+1)
+			inter.SetTableElementValue(elem, keys, value, index+1, x, y)
 			return
 		}
 	}
-	table.Set(key, CLPTR(inter.CurrentScope, value))
+	table.Set(key, CLPTR(inter.CurrentScope, value, x, y))
 	table.ToMemory()
 }
 
-func (inter *Interpreter) SetInstanceFieldValue(instance *StructObject, fields []string, value any, index int) {
+func (inter *Interpreter) SetInstanceFieldValue(instance *StructObject, fields []string, value any, index int, x, y int) {
 	if index >= len(fields) {
 		return
 	}
@@ -1906,13 +2090,13 @@ func (inter *Interpreter) SetInstanceFieldValue(instance *StructObject, fields [
 	switch fieldVal := fieldVal.(type) {
 	case *StructObject:
 		if index >= len(fields) {
-			instance.Set(field, value)
+			instance.Set(field, value, x, y)
 			break
 		}
 
-		inter.SetInstanceFieldValue(fieldVal, fields, value, index+1)
+		inter.SetInstanceFieldValue(fieldVal, fields, value, index+1, x, y)
 	default:
-		instance.Set(field, value)
+		instance.Set(field, value, x, y)
 	}
 }
 
@@ -1961,7 +2145,7 @@ func (inter *Interpreter) SetElementValue(node *SetElem) {
 
 	switch table := table.(type) {
 	case *Map:
-		inter.SetTableElementValue(table, keys, value, 0)
+		inter.SetTableElementValue(table, keys, value, 0, node.X, node.Y)
 	default:
 		throw(inter.CurrentFileName, "Cannot index non-table value", node.X, node.Y)
 	}
@@ -1983,7 +2167,7 @@ func (inter *Interpreter) SetFieldValue(node *SetFieldNode) {
 
 	switch instance := instance.(type) {
 	case *StructObject:
-		inter.SetInstanceFieldValue(instance, fields, value, 0)
+		inter.SetInstanceFieldValue(instance, fields, value, 0, node.X, node.Y)
 	default:
 		throw(inter.CurrentFileName, "Cannot assign field of non-instance value", node.X, node.Y)
 	}
@@ -2010,7 +2194,7 @@ func (inter *Interpreter) DeclareStructure(structDecl *StructDeclNode) {
 	if !inter.CurrentScope.Add(identifier, &Structure{
 		Identifier: identifier,
 		Fields:     fields,
-	}) {
+	}, "struct", structDecl.X, structDecl.Y) {
 		throw(inter.CurrentFileName, "Attempt to declare the structure with the same name as the variable '%s'.", structDecl.X, structDecl.Y, identifier)
 	}
 }
@@ -2045,7 +2229,7 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		cell := &Cell{
 			Scope: inter.CurrentScope,
 		}
-		cell.Set(fieldDecl.Func, false)
+		cell.Set(fieldDecl.Func, false, structObjNode.X, structObjNode.Y)
 
 		methods[method_i] = &Method{
 			Identifier: fieldDecl.Identifier,
@@ -2077,9 +2261,9 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 				throw(inter.CurrentFileName, "Cannot assign a field an empty value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
 			}
 
-			cell.Set(v[0], false)
+			cell.Set(v[0], false, structObjNode.X, structObjNode.Y)
 		default:
-			cell.Set(v, false)
+			cell.Set(v, false, structObjNode.X, structObjNode.Y)
 		}
 
 		bits := originalStructure.Fields[i].Bits
@@ -2133,7 +2317,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		if len(node.Identifier.Value) == 0 {
 			throw(inter.CurrentFileName, "Name of the function cannot be empty.", node.X, node.Y)
 		}
-		if !inter.CurrentScope.Add(node.Identifier.Value, node) {
+		if !inter.CurrentScope.Add(node.Identifier.Value, node, "func", node.X, node.Y) {
 			throw(inter.CurrentFileName, "Attempt to redeclare a variable '%s'.", node.X, node.Y, node.Identifier.Value)
 		}
 	case *StructDeclNode:
@@ -2148,7 +2332,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		}
 
 		for i, ident := range node.Identifier {
-			if !inter.CurrentScope.Add(ident.Value, readyValues[i]) {
+			if !inter.CurrentScope.Add(ident.Value, readyValues[i], node.DataTypes[i].Value, node.X, node.Y) {
 				throw(inter.CurrentFileName, "Attempt to redeclare a variable '%s'.", node.X, node.Y, ident.Value)
 			}
 		}
@@ -2191,7 +2375,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 
 		newValue := inter.GetNodeValueS(node.Value, node.X, node.Y)
 
-		cellOfPtr.Set(newValue, false)
+		cellOfPtr.Set(newValue, false, node.X, node.Y)
 	case *FuncCall:
 		inter.GetNodeValue(node)
 	case *SetElem:
@@ -2255,7 +2439,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 				throw(inter.CurrentFileName, "Path for the import keyword cannot be a non-string value.", node.Position(), node.Line())
 			}
 
-			importModule(path.Value, inter.CurrentScope)
+			importModule(path.Value, inter.CurrentScope, node.X, node.Y)
 		} else if len(node.Path) > 1 {
 			throw(inter.CurrentFileName, "Cannot import more than one file or module.", node.Position(), node.Line())
 		} else {
@@ -2278,7 +2462,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		switch cycleValue := cycleValue.(type) {
 		case *Map:
 			for key, value := range cycleValue.AllFromFront() {
-				end, skip, returnValue := inter.CompleteBody(node.Body, false, true, [2]any{keyIdent.Value, key}, [2]any{valueIdent.Value, value.Get()})
+				end, skip, returnValue := inter.CompleteBody(node.Body, false, true, [3]any{keyIdent.Value, key, getValueType(key)}, [3]any{valueIdent.Value, value.Get(), value.DataType})
 
 				if skip {
 					continue
@@ -2319,7 +2503,7 @@ func (inter *Interpreter) Complete(logenv bool) map[any]*Cell { //go run yks run
 	inter.CurrentScope = mainScope
 
 	for ident, function := range builtinFuncs {
-		mainScope.Add(ident, newFTemp(ident, function))
+		mainScope.Add(ident, newFTemp(ident, function), "func", -2, -2)
 	}
 
 	for _, node := range inter.AST {
