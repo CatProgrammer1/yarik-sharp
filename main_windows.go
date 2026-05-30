@@ -133,13 +133,15 @@ func getValueType(v any) string {
 	case *Map:
 		return "table"
 	case *StructObject:
-		return instanceTypePrefix + v.Identifier
+		return v.Identifier
 	case *Structure:
 		return "structure"
 	case *FuncDec:
 		return "func"
-	case uintptr, unsafe.Pointer:
+	case uintptr:
 		return "pointer"
+	case unsafe.Pointer:
+		return "unsafe.pointer"
 	case error:
 		return "error"
 	}
@@ -245,10 +247,6 @@ func help([]string) {
 	for k := range commands {
 		fmt.Printf("|-- %s --\n", k)
 	}
-}
-
-func a() (int, int) {
-	return 1, 1
 }
 
 func handle(err error) {

@@ -9,6 +9,8 @@ import (
 	"unicode"
 )
 
+type rawint64 int64
+
 const (
 	boolTrue  = "true"
 	boolFalse = "false"
@@ -351,7 +353,7 @@ func (lexer *Lexer) GetNumber() Token {
 			handle(err)
 		}
 
-		return NewToken(n, "int", lexer.CurrentPosition, lexer.CurrentLine)
+		return NewToken(rawint64(n), "int", lexer.CurrentPosition, lexer.CurrentLine)
 	}
 }
 

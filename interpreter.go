@@ -104,36 +104,36 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 	case "i8", "i16", "i32", "i64":
 		bits := uint8(twoDigitStr(dataType[1:]))
 
-		if !checkType[int64](value) {
+		if !checkType[rawint64](value) {
 			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 		}
 
 		switch bits {
 		case 8:
-			cell.Set(int8(value.(int64)), false, x, y)
+			cell.Set(int8(value.(rawint64)), false, x, y)
 		case 16:
-			cell.Set(int16(value.(int64)), false, x, y)
+			cell.Set(int16(value.(rawint64)), false, x, y)
 		case 32:
-			cell.Set(int32(value.(int64)), false, x, y)
+			cell.Set(int32(value.(rawint64)), false, x, y)
 		case 64:
-			cell.Set(int64(value.(int64)), false, x, y)
+			cell.Set(int64(value.(rawint64)), false, x, y)
 		}
 	case "u8", "u16", "u32", "u64":
 		bits := uint8(twoDigitStr(dataType[1:]))
 
-		if !checkType[int64](value) {
+		if !checkType[rawint64](value) {
 			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 		}
 
 		switch bits {
 		case 8:
-			cell.Set(uint8(value.(int64)), false, x, y)
+			cell.Set(uint8(value.(rawint64)), false, x, y)
 		case 16:
-			cell.Set(uint16(value.(int64)), false, x, y)
+			cell.Set(uint16(value.(rawint64)), false, x, y)
 		case 32:
-			cell.Set(uint32(value.(int64)), false, x, y)
+			cell.Set(uint32(value.(rawint64)), false, x, y)
 		case 64:
-			cell.Set(uint64(value.(int64)), false, x, y)
+			cell.Set(uint64(value.(rawint64)), false, x, y)
 		}
 	case "f32", "f64":
 		bits := uint8(twoDigitStr(dataType[1:]))
@@ -155,7 +155,7 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 		}
 
 		cell.Set(value.(bool), false, x, y)
-	case "ptr":
+	case "pointer":
 		if !checkType[uintptr](value) {
 			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 		}
@@ -198,19 +198,25 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 
 		cell.Set(nil, false, x, y)
 	default:
-		if strings.HasPrefix(cell.DataType, instanceTypePrefix) {
-			if !checkType[*StructObject](value) {
-				throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
-			}
-
-			cell.Set(value, false, x, y)
-			return
+		structObject, ok := value.(*StructObject)
+		if !ok || structObject.Identifier != cell.DataType {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 		}
-		panic("Oh my gosh noooo")
+
+		cell.Set(value, false, x, y)
 	}
 }
 
 func (cell *Cell) Set(value any, nonptr bool, x, y int) {
+	if checkType[rawint64](value) {
+		bits := twoDigitStr(cell.DataType[1:])
+		if strings.HasPrefix(cell.DataType, "i") {
+			value = toInt(int64(value.(rawint64)), -bits)
+		} else {
+			value = toInt(int64(value.(rawint64)), bits)
+		}
+	}
+
 	if cell.DataType != "" && cell.DataType != "any" && getValueType(value) != cell.DataType {
 		throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 	}
@@ -323,7 +329,7 @@ func (cell *Cell) Set(value any, nonptr bool, x, y int) {
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(table.Address())
 		}
-	case "ptr":
+	case "pointer":
 		cell.Bits = 64
 		cell.PtrValue = value.(uintptr)
 
@@ -340,19 +346,16 @@ func (cell *Cell) Set(value any, nonptr bool, x, y int) {
 	case "void":
 		cell.Clear()
 	default:
-		if strings.HasPrefix(cell.DataType, instanceTypePrefix) {
-			instance := value.(*StructObject)
-
-			cell.InstanceValue = instance
-
-			if !nonptr {
-				cell.Ptr = unsafe.Pointer(instance.Address())
-			}
-			return
+		instance, ok := value.(*StructObject)
+		if !ok {
+			panic("Unsupported type: " + fmt.Sprintf("'%s'", getValueType(value)))
 		}
-		fmt.Println(value)
-		fmt.Printf("%T\n", value)
-		panic("Unsupported type in Cell.Set")
+
+		cell.InstanceValue = instance
+
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(instance.Address())
+		}
 	}
 }
 
@@ -424,7 +427,7 @@ func (cell *Cell) Get() any {
 		return cell.StructValue
 	case "table":
 		return cell.TableValue
-	case "ptr":
+	case "pointer":
 		return cell.PtrValue
 	case "func":
 		return cell.FuncValue
@@ -1646,7 +1649,7 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 				throw(inter.CurrentFileName, "Cannot get a pointer of '%s' value", node.X, node.Y, getValueType(v))
 			}
 
-			return uintptr(unsafe.Pointer(&cell.Ptr))
+			return uintptr(cell.Ptr) //uintptr(unsafe.Pointer(&cell.Ptr))
 		case *GetElementNode:
 			tableNode, keyNodes := inter.GetTableAndKeys(srcNode, []Node{})
 			if tableNode == nil {
@@ -1992,6 +1995,7 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 			&VarDec{
 				Identifier: argsIdentifiers,
 				Value:      argsValues,
+				DataTypes:  funcDec.ArgumentsDataTypes,
 				Argument:   true,
 				X:          node.X,
 				Y:          node.Y,
@@ -2003,7 +2007,7 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 		body = slices.Concat(argsBody, body)
 		if funcDec.Self != nil {
 			addToScope = [][3]any{
-				{selfKeyword, funcDec.Self, instanceTypePrefix + funcDec.Self.Identifier},
+				{selfKeyword, funcDec.Self, funcDec.Self.Identifier},
 			}
 		}
 
@@ -2332,6 +2336,9 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		}
 
 		for i, ident := range node.Identifier {
+			if ident.Value == "_" {
+				continue
+			}
 			if !inter.CurrentScope.Add(ident.Value, readyValues[i], node.DataTypes[i].Value, node.X, node.Y) {
 				throw(inter.CurrentFileName, "Attempt to redeclare a variable '%s'.", node.X, node.Y, ident.Value)
 			}

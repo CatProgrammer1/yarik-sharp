@@ -81,12 +81,12 @@ func (multIdents *MultIdents) Line() int {
 }
 
 type FuncDec struct {
-	Identifier                    IdentNode
-	Self                          *StructObject //For interpreter
-	Arguments, ArgumentsDataTypes []IdentNode
-	Body                          []Node
-	Template                      func(v ...any) []any
-	X, Y                          int
+	Identifier                                     IdentNode
+	Self                                           *StructObject //For interpreter
+	Arguments, ArgumentsDataTypes, ReturnDataTypes []IdentNode
+	Body                                           []Node
+	Template                                       func(v ...any) []any
+	X, Y                                           int
 }
 
 func newFTemp(identifier string, t func(v ...any) []any) *FuncDec {
@@ -135,7 +135,7 @@ func (numNode *NumNode) Line() int {
 }*/
 
 type IntNode struct {
-	Value int64
+	Value rawint64
 	X, Y  int
 }
 

@@ -180,7 +180,7 @@ func newDataTypeNode(token Token) Node {
 	switch token.Type {
 	case "int":
 		return &IntNode{
-			token.Value.(int64),
+			token.Value.(rawint64),
 			x, y,
 		}
 	case "float":
@@ -1161,11 +1161,13 @@ VARPAR:
 
 			varDec.Identifier = append(varDec.Identifier, IdentNode{token.Value.(string), x, y})
 
-			parser.Next("ident")
+			if token.Value.(string) != "_" {
+				parser.Next("ident")
 
-			token = parser.CurrentToken
+				token = parser.CurrentToken
 
-			varDec.DataTypes = append(varDec.DataTypes, IdentNode{token.Value.(string), x, y})
+				varDec.DataTypes = append(varDec.DataTypes, IdentNode{token.Value.(string), x, y})
+			}
 
 			parser.Next()
 
@@ -1210,8 +1212,10 @@ VARPAR:
 	return varDec
 }
 
-func (parser *Parser) ParseDeclArgs() []IdentNode {
+// -> 1: Arguments; 2: Arguments data types
+func (parser *Parser) ParseDeclArgs() ([]IdentNode, []IdentNode) {
 	args := []IdentNode{}
+	argsDataTypes := []IdentNode{}
 
 ARGSPAR:
 	for parser.CurrentPosition >= 0 {
@@ -1223,14 +1227,46 @@ ARGSPAR:
 			parser.Next("closebracket", "ident")
 		case "ident":
 			args = append(args, IdentNode{token.Value.(string), x, y})
+
+			parser.Next("ident")
+
+			token = parser.CurrentToken
+
+			argsDataTypes = append(argsDataTypes, IdentNode{token.Value.(string), x, y})
+
 			parser.Next("closebracket", "comma")
 		case "closebracket":
 			break ARGSPAR
 		}
 	}
 
-	return args
+	return args, argsDataTypes
 }
+
+/*func (parser *Parser) ParseDeclReturnDatatypes() ([]IdentNode) {
+	returnDatatypes := []IdentNode{}
+
+RETPAR:
+	for parser.CurrentPosition >= 0 {
+		token := parser.CurrentToken
+		x, y := token.Position, token.Line
+
+		switch token.Type {
+		case "openbracket":
+			parser.Next("ident")
+		case "comma":
+			parser.Next("closebracket", "ident")
+		case "ident":
+			returnDatatypes = append(returnDatatypes, IdentNode{token.Value.(string), x, y})
+
+			parser.Next("closebracket", "comma")
+		case "closebracket":
+			break RETPAR
+		}
+	}
+
+	return returnDatatypes
+}*/
 
 func (parser *Parser) ParseFuncDecl() *FuncDec {
 	funcDec := &FuncDec{}
@@ -1248,9 +1284,10 @@ FUNCPAR:
 			parser.Next("openbracket")
 		case "openbracket":
 			parser.Next("closebracket", "ident")
-			funcDec.Arguments = parser.ParseDeclArgs()
+			funcDec.Arguments, funcDec.ArgumentsDataTypes = parser.ParseDeclArgs()
 		case "closebracket":
 			parser.Next("openbrace")
+
 			funcDec.Body = parser.ParseBody()
 			break FUNCPAR
 		}
