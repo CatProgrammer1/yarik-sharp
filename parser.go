@@ -1058,19 +1058,11 @@ STRUCTDECLPAR:
 func (parser *Parser) ParseStructDeclFields() []*FieldDeclNode {
 	fields := []*FieldDeclNode{}
 
-	var cbits *IntNode
-
 FIELDS:
 	for parser.CurrentPosition >= 0 {
 		token := parser.CurrentToken
 
 		switch token.Type {
-		case "valbitcount":
-			parser.Next("int")
-			token = parser.CurrentToken
-
-			cbits = newDataTypeNode(token).(*IntNode)
-			parser.Next("ident")
 		case "ident":
 			fieldDeclNode := &FieldDeclNode{
 				Identifier: IdentNode{
@@ -1079,10 +1071,14 @@ FIELDS:
 				},
 				Func: nil,
 			}
-			if cbits != nil {
-				fieldDeclNode.Bits = cbits
+
+			parser.Next("ident")
+
+			token := parser.CurrentToken
+
+			fieldDeclNode.DataType = IdentNode{
+				token.Value.(string), token.Position, token.Line,
 			}
-			cbits = nil
 
 			fields = append(fields, fieldDeclNode)
 
@@ -1095,7 +1091,7 @@ FIELDS:
 				Func:       funcDecl,
 			})
 		case "comma":
-			parser.Next("ident", "func", "closebrace", "valbitcount")
+			parser.Next("ident", "func", "closebrace")
 		case "closebrace":
 			parser.Next()
 			break FIELDS

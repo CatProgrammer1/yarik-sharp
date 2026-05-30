@@ -347,9 +347,8 @@ func (importNode *Import) Line() int {
 }
 
 type FieldDeclNode struct {
-	Identifier IdentNode
-	Bits       *IntNode
-	Func       *FuncDec
+	Identifier, DataType IdentNode
+	Func                 *FuncDec
 }
 
 type StructDeclNode struct {

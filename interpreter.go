@@ -847,6 +847,15 @@ func (structure *Structure) CheckField(name string) bool {
 	return false
 }
 
+func (structure *Structure) GetField(name string) *FieldDecl {
+	for _, field := range structure.Fields {
+		if field.Identifier == name {
+			return field
+		}
+	}
+	return nil
+}
+
 func (structure *Structure) IsAFunc(name string) bool {
 	for _, field := range structure.Fields {
 		if field.Identifier == name {
@@ -867,10 +876,9 @@ func (structure *Structure) CountMethods() int {
 }
 
 type FieldDecl struct {
-	Identifier string
-	Method     bool
-	Bits       int8
-	Func       *FuncDec
+	Identifier, DataType string
+	Method               bool
+	Func                 *FuncDec
 }
 
 func newInstance(name string, fields []*Field, methods []*Method) *StructObject {
@@ -891,9 +899,8 @@ type StructObject struct {
 }
 
 type Field struct {
-	Identifier string
-	LayoutType int8
-	Value      *Cell
+	Identifier, DataType string
+	Value                *Cell
 }
 
 type Method struct {
@@ -909,9 +916,14 @@ type FieldLayout struct {
 }
 
 func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
+	var mem []byte
+	if len(layout) == 0 {
+		s.LastMem = mem
+		return mem
+	}
+
 	size := layout[len(layout)-1].Offset + layout[len(layout)-1].Size
 
-	var mem []byte
 	if len(s.LastMem) == 0 {
 		mem = make([]byte, size)
 	} else if len(s.LastMem) < int(size) {
@@ -932,40 +944,42 @@ func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 
 		offset := int(lf.Offset)
 		switch lf.Type {
-		case "int8":
+		case "i8":
 			v := int8(toInt64(val.Get()))
 			mem[offset] = byte(v)
 
-		case "uint8":
-			v := uint8(toInt64(val.Get()))
+		case "u8":
+			v := uint8(toUint64(val.Get()))
 			mem[offset] = byte(v)
 
-		case "int16":
+		case "i16":
 			v := int16(toInt64(val.Get()))
 			binary.LittleEndian.PutUint16(mem[offset:], uint16(v))
 
-		case "uint16":
+		case "u16":
 			v := uint16(toInt64(val.Get()))
 			binary.LittleEndian.PutUint16(mem[offset:], v)
 
-		case "int32":
+		case "i32":
 			v := int32(toInt64(val.Get()))
 			binary.LittleEndian.PutUint32(mem[offset:], uint32(v))
 
-		case "uint32":
+		case "u32":
 			v := uint32(toInt64(val.Get()))
 			binary.LittleEndian.PutUint32(mem[offset:], v)
 
-		case "int64":
+		case "i64":
 			v := int64(toInt64(val.Get()))
 			binary.LittleEndian.PutUint64(mem[offset:], toUint64(v))
 
-		case "uint64", "uintptr", "ptr":
+		case "u64", "ptr":
 			v := toUint64(val.Get())
 			binary.LittleEndian.PutUint64(mem[offset:], v)
 
-		case "float":
-			binary.LittleEndian.PutUint64(mem[offset:], toUint64(val.Get()))
+		case "f64":
+			binary.LittleEndian.PutUint64(mem[offset:], math.Float64bits(val.Get().(float64)))
+		case "f32":
+			binary.LittleEndian.PutUint32(mem[offset:], math.Float32bits(val.Get().(float32)))
 		case "bool":
 			mem[offset] = byte(toUint64(val.Get()))
 		case "instance":
@@ -993,41 +1007,45 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout, x, y int) {
 		offset := int(lf.Offset)
 
 		switch lf.Type {
-		case "int8":
+		case "i8":
 			v := int8(mem[offset])
 			s.Set(lf.Name, int64(v), x, y)
 
-		case "uint8":
+		case "u8":
 			v := mem[offset]
 			s.Set(lf.Name, int64(v), x, y)
 
-		case "int16":
+		case "i16":
 			v := int16(binary.LittleEndian.Uint16(mem[offset:]))
 			s.Set(lf.Name, int64(v), x, y)
 
-		case "uint16":
+		case "u16":
 			v := binary.LittleEndian.Uint16(mem[offset:])
 			s.Set(lf.Name, int64(v), x, y)
 
-		case "int32":
+		case "i32":
 			v := int32(binary.LittleEndian.Uint32(mem[offset:]))
 			s.Set(lf.Name, int64(v), x, y)
 
-		case "uint32":
+		case "u32":
 			v := binary.LittleEndian.Uint32(mem[offset:])
 			s.Set(lf.Name, int64(v), x, y)
 
-		case "int64":
+		case "i64":
 			v := int64(binary.LittleEndian.Uint64(mem[offset:]))
 			s.Set(lf.Name, v, x, y)
 
-		case "uint64", "uintptr", "ptr":
+		case "u64", "ptr":
 			v := binary.LittleEndian.Uint64(mem[offset:])
 			s.Set(lf.Name, uintptr(v), x, y)
 
-		case "float":
+		case "f64":
 			bits := binary.LittleEndian.Uint64(mem[offset:])
 			v := math.Float64frombits(bits)
+			s.Set(lf.Name, v, x, y)
+		case "f32":
+			bits := binary.LittleEndian.Uint32(mem[offset:])
+			v := math.Float32frombits(bits)
 			s.Set(lf.Name, v, x, y)
 		case "bool":
 			v := mem[offset]
@@ -1221,24 +1239,24 @@ func (s *StructObject) Layout() []FieldLayout {
 		var typ string
 		cell := field.Value
 
-		if field.LayoutType != 0 {
-			prefix := ""
-			if field.LayoutType > 0 {
-				prefix = "u"
-			}
-			switch int64(math.Abs(float64(field.LayoutType))) {
-			case 8:
-				size, align, typ = 1, 1, prefix+"int8"
-			case 16:
-				size, align, typ = 2, 2, prefix+"int16"
-			case 32:
-				size, align, typ = 4, 4, prefix+"int32"
-			case 64:
-				size, align, typ = 8, 8, prefix+"int64"
-			default:
-				throwNoPos("Unsupported amount of bits: %d", field.LayoutType)
-			}
-		} else {
+		switch field.DataType {
+		case "i8", "u8":
+			size, align = 1, 1
+		case "i16", "u16":
+			size, align = 2, 2
+		case "i32", "u32":
+			size, align = 4, 4
+		case "i64", "u64":
+			size, align = 8, 8
+		case "f64":
+			size, align = 8, 8
+		case "f32":
+			size, align = 4, 4
+		case "pointer":
+			size, align, typ = 8, 8, "ptr"
+		case "bool":
+			size, align, typ = 1, 1, "bool"
+		default:
 			switch v := cell.Get().(type) {
 			case *StructObject:
 				sub := v.Layout()
@@ -1246,18 +1264,11 @@ func (s *StructObject) Layout() []FieldLayout {
 				size = last.Offset + last.Size
 
 				align, typ = 8, "instance"
-			case unsafe.Pointer, uintptr:
-				size, align, typ = 8, 8, "ptr"
-			case int64:
-				size, align, typ = 8, 8, "int64"
-			case bool:
-				size, align, typ = 1, 1, "bool"
-			case float64:
-				size, align, typ = 8, 8, "float"
-			default:
-				fmt.Printf("%T\n", v)
-				panic("Unsupported field type: " + field.Identifier)
 			}
+		}
+
+		if typ == "" {
+			typ = field.DataType
 		}
 
 		offset = alignf(offset, align)
@@ -2182,15 +2193,10 @@ func (inter *Interpreter) DeclareStructure(structDecl *StructDeclNode) {
 	fields := make([]*FieldDecl, len(structDecl.Fields))
 
 	for i, fieldDeclNode := range structDecl.Fields {
-		bits := int8(0)
-		if fieldDeclNode.Bits != nil {
-			bits = int8(fieldDeclNode.Bits.Value)
-		}
-
 		fields[i] = &FieldDecl{
 			Identifier: fieldDeclNode.Identifier.Value,
 			Method:     fieldDeclNode.Func != nil,
-			Bits:       bits,
+			DataType:   fieldDeclNode.DataType.Value,
 			Func:       fieldDeclNode.Func,
 		}
 	}
@@ -2257,6 +2263,8 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 			Scope: inter.CurrentScope,
 		}
 
+		originalStructField := originalStructure.GetField(fieldName)
+
 		switch v := v.(type) {
 		case []any:
 			if len(v) > 1 {
@@ -2265,17 +2273,15 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 				throw(inter.CurrentFileName, "Cannot assign a field an empty value.", fieldNode.Identifier.X, fieldNode.Identifier.Y)
 			}
 
-			cell.Set(v[0], false, structObjNode.X, structObjNode.Y)
+			cell.InitFromRaw(v[0], originalStructField.DataType, false, structObjNode.X, structObjNode.Y)
 		default:
-			cell.Set(v, false, structObjNode.X, structObjNode.Y)
+			cell.InitFromRaw(v, originalStructField.DataType, false, structObjNode.X, structObjNode.Y)
 		}
-
-		bits := originalStructure.Fields[i].Bits
 
 		fields[i] = &Field{
 			Identifier: fieldNode.Identifier.Value,
+			DataType:   cell.DataType,
 			Value:      cell,
-			LayoutType: bits,
 		}
 	}
 

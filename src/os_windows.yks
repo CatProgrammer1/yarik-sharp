@@ -3,7 +3,7 @@
 import "sys"
 import "tables"
 
-yar kernelReadFile, kernelWriteFile, kernelCreateFileW, kernelCloseHandle = kernel32("ReadFile"), kernel32("WriteFile"), kernel32("CreateFileW"), kernel32("CloseHandle")
+yar kernelReadFile pointer, kernelWriteFile pointer, kernelCreateFileW pointer, kernelCloseHandle pointer = kernel32("ReadFile"), kernel32("WriteFile"), kernel32("CreateFileW"), kernel32("CloseHandle")
 
 struct File {
     h,

@@ -38,7 +38,6 @@ var (
 
 		"@external": "external_import",
 
-		"#bits": "valbitcount",
 		"<-":    "tableelembits",
 
 		"?": "asserttype",

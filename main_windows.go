@@ -135,7 +135,7 @@ func getValueType(v any) string {
 	case *StructObject:
 		return v.Identifier
 	case *Structure:
-		return "structure"
+		return "struct"
 	case *FuncDec:
 		return "func"
 	case uintptr:
