@@ -50,10 +50,12 @@ var (
 			v = v[BUILTIN_SPECIALS:]
 
 			switch t := v[0].(type) {
-			case float64:
-				time.Sleep(time.Duration(t * float64(time.Second)))
-			case int64:
-				time.Sleep(time.Duration(t * int64(time.Millisecond)))
+			case float64, float32:
+				time.Sleep(time.Duration(mustNTOF64(t) * float64(time.Second)))
+			case int64, int32, int16, int8:
+				time.Sleep(time.Duration(toInt64(t) * int64(time.Millisecond)))
+			case uint64, uint32, uint16, uint8:
+				time.Sleep(time.Duration(toUint64(t) * uint64(time.Millisecond)))
 			default:
 				throw(inter.CurrentFileName, "Time value must be a number.", x, y)
 			}
@@ -182,11 +184,11 @@ var (
 		},
 
 		"unicodetostr": func(v ...any) []any {
-			argsCheck(v, 1, 1, "int")
+			argsCheck(v, 1, 1, "uint")
 
 			v = v[BUILTIN_SPECIALS:]
 
-			r := rune(toInt64(v[0]))
+			r := rune(toUint64(v[0]))
 
 			return []any{string(r)}
 		},

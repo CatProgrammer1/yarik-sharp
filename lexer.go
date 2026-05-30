@@ -47,14 +47,13 @@ var (
 		nilVoid: "nil",
 
 		//operators
-		"=":  "assign",
-		"+":  "add",
-		"-":  "sub",
-		"/":  "div",
-		"*":  "mul",
-		"|":  "bitor",
-		"&":  "getptr",
-		">>": "valbits",
+		"=": "assign",
+		"+": "add",
+		"-": "sub",
+		"/": "div",
+		"*": "mul",
+		"|": "bitor",
+		"&": "getptr",
 
 		"->": "indexstruct",
 

@@ -169,6 +169,13 @@ func checkDataType(expected string, v any) bool {
 		}
 
 		return false
+	case "usint":
+		switch v.(type) {
+		case int64, int32, int16, int8, uint8, uint16, uint32, uint64:
+			return true
+		}
+
+		return false
 	case "int":
 		switch v.(type) {
 		case int64, int32, int16, int8, uint8, uint16, uint32, uint64:
@@ -183,10 +190,6 @@ func checkDataType(expected string, v any) bool {
 		}
 
 		return false
-	case "m_float":
-		_, ok := v.(float64)
-
-		return ok
 	case "float":
 		_, ok := v.(float64)
 		if ok {

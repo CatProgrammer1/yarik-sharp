@@ -32,7 +32,7 @@ func (identNode *IdentNode) Line() int {
 type VarDec struct {
 	Value      [][]Node
 	Identifier []IdentNode
-	DataTypes []IdentNode
+	DataTypes  []IdentNode
 	Argument   bool //Interpreter only
 	X, Y       int
 }
@@ -81,12 +81,12 @@ func (multIdents *MultIdents) Line() int {
 }
 
 type FuncDec struct {
-	Identifier IdentNode
-	Self       *StructObject //For interpreter
-	Arguments  []IdentNode
-	Body       []Node
-	Template   func(v ...any) []any
-	X, Y       int
+	Identifier                    IdentNode
+	Self                          *StructObject //For interpreter
+	Arguments, ArgumentsDataTypes []IdentNode
+	Body                          []Node
+	Template                      func(v ...any) []any
+	X, Y                          int
 }
 
 func newFTemp(identifier string, t func(v ...any) []any) *FuncDec {
