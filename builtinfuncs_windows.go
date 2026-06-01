@@ -193,6 +193,37 @@ var (
 			return []any{string(r)}
 		},
 
+		"make": func(v ...any) []any {
+			argsCheck(v, 3, 3, "int", "string", "any")
+
+			x, y := v[0].(int), v[1].(int)
+			inter := v[2].(*Interpreter)
+
+			v = v[BUILTIN_SPECIALS:]
+
+			length := int(toInt64(v[0]))
+			dataType := v[1].(string)
+			defaultValue := v[2]
+
+			if length < 0 {
+				length = 0
+			}
+
+			m := &Map{
+				OrderedMap: orderedmap.NewOrderedMap[any, *Cell](),
+				Pointers:   []any{},
+				Layout:     []string{},
+				Mem:        []byte{},
+			}
+
+			for i := 0; i < length; i++ {
+				m.Set(int64(i), CLPTR(inter.CurrentScope, dataType, defaultValue, x, y))
+			}
+			m.ToMemory()
+
+			return []any{m}
+		},
+
 		"bytes": func(v ...any) []any {
 			argsCheck(v, 1, 1, "string")
 
@@ -208,14 +239,13 @@ var (
 
 			m := &Map{
 				OrderedMap: orderedmap.NewOrderedMap[any, *Cell](),
-				Bits:       8,
 				Pointers:   []any{},
 				Layout:     []string{},
 				Mem:        []byte{},
 			}
 
 			for i, v := range slice {
-				m.Set(int64(i), CLPTR(inter.CurrentScope, int64(v), x, y))
+				m.Set(int64(i), CLPTR(inter.CurrentScope, "u8", uint8(v), x, y))
 			}
 			m.ToMemory()
 

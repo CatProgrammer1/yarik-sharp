@@ -895,6 +895,8 @@ MAPPAR:
 			mapNode.Map = append(mapNode.Map, &Element{
 				Key:   currentKey,
 				Value: currentValue,
+
+				X: token.Position, Y: token.Line,
 			})
 
 			currentKey = []Node{}
@@ -908,14 +910,17 @@ MAPPAR:
 			parser.Unexpect(tableSeparatorTokenType, tableKeyValueAssignTokenType)
 			parser.Next()
 		case "closesqbrac":
-			parser.Next()
-			token = parser.CurrentToken
+			parser.Next("table_datatypes_init")
+			parser.Next("ident")
 
-			if token.Type == "tableelembits" {
-				parser.Next()
+			dataType := parser.CurrentToken
 
-				mapNode.Bits = parser.ParseValue()
+			mapNode.ElemDataType = IdentNode{
+				Value: dataType.Value.(string),
+				X:     dataType.Position, Y: dataType.Line,
 			}
+
+			parser.Next()
 
 			break MAPPAR
 		default:
@@ -929,10 +934,9 @@ MAPPAR:
 				}
 
 				currentValue = currentKey
-				currentKey = []Node{newDataTypeNode(Token{
-					Value: elementCount,
-					Type:  "int",
-				})}
+				currentKey = []Node{&KeyNilNode{
+					X: token.Position, Y: token.Line,
+				}}
 			case tableKeyValueAssignTokenType:
 				break
 			default:

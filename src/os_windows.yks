@@ -6,13 +6,13 @@ import "tables"
 yar kernelReadFile pointer, kernelWriteFile pointer, kernelCreateFileW pointer, kernelCloseHandle pointer = kernel32("ReadFile"), kernel32("WriteFile"), kernel32("CreateFileW"), kernel32("CloseHandle")
 
 struct File {
-    h,
-    func read(buf) {
+    h pointer,
+    func read(buf table) {
         if buf == void {
             buf = make(1024, 0, 8)
         }
 
-        yar _, _, err = kernelReadFile(
+        yar _, _, err error = kernelReadFile(
             this->h,
             buf,
             len(buf),
@@ -22,12 +22,12 @@ struct File {
 
         return buf, err
     }
-     func write(buf) {
+     func write(buf table) {
         if buf == void {
             throw("Write buffer cannot be a 'void' value")
         }
 
-        yar _, _, err = kernelWriteFile(
+        yar _, _, err error = kernelWriteFile(
             this->h,
             buf,
             len(buf),
@@ -38,14 +38,14 @@ struct File {
         return err
     }
     func close() {
-        yar _, _, err = kernelCloseHandle(this->h)
+        yar _, _, err error = kernelCloseHandle(this->h)
 
         return err
     }
 }
 
-func createFile(name) {
-    yar r1, _, err = kernelCreateFileW(name,
+func createFile(name string) {
+    yar r1 pointer, _, err error = kernelCreateFileW(name,
         GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE,
 		void,
 		CREATE_ALWAYS,
@@ -57,8 +57,8 @@ func createFile(name) {
     }, err
 }
 
-func openFile(name) {
-    yar r1, _, err = kernelCreateFileW(name,
+func openFile(name string) {
+    yar r1 pointer, _, err error = kernelCreateFileW(name,
         GENERIC_READ|GENERIC_WRITE, FILE_SHARE_READ|FILE_SHARE_WRITE,
 		void,
 		OPEN_EXISTING,

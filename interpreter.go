@@ -23,7 +23,7 @@ var (
 
 	externalCallFinished = make(chan ExternalTaskResult, 10000)
 
-	dataTypes = []string{
+	nonvoidDatatypes = []string{
 		"i64",
 		"i32",
 		"i16",
@@ -37,6 +37,10 @@ var (
 		"f32",
 
 		"bool",
+		"error",
+		"pointer",
+		"func",
+		"struct",
 		"string",
 		"table",
 	}
@@ -86,10 +90,11 @@ type Cell struct {
 	FuncValue     *FuncDec
 	PtrValue      uintptr
 	ErrorValue    error
+	AnyValue      any
 
 	Bits uint8 //Shouldn't be used anywhere except *Cell structure methods
 
-	DataType string // int, float, string, bool, struct, instance, table, ptr, func, error, "valueptr"
+	DataType string
 	Ptr      unsafe.Pointer
 	TempBuf  any
 
@@ -104,8 +109,12 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 	case "i8", "i16", "i32", "i64":
 		bits := uint8(twoDigitStr(dataType[1:]))
 
-		if !checkType[rawint64](value) {
+		rawInt64 := checkType[rawint64](value)
+		if !rawInt64 && cell.DataType != getValueType(value) {
 			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+		if !rawInt64 {
+			value = rawint64(toInt64(value))
 		}
 
 		switch bits {
@@ -180,7 +189,7 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 
 		cell.Set(value.(*Structure), false, x, y)
 	case "table":
-		if !checkType[*Map](value) {
+		if !checkType[*Map](value) && value != nil {
 			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 		}
 
@@ -197,7 +206,18 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 		}
 
 		cell.Set(nil, false, x, y)
+	case "any":
+		if checkType[rawint64](value) {
+			value = int64(value.(rawint64))
+		}
+
+		cell.Set(value, false, x, y)
 	default:
+		structureCell := cell.Scope.GetCell(cell.DataType)
+		if structureCell == nil || structureCell.DataType != "struct" {
+			throw(cell.Scope.Interpreter.CurrentFileName, "Unexisting type: '%s'", x, y, cell.DataType)
+		}
+
 		structObject, ok := value.(*StructObject)
 		if !ok || structObject.Identifier != cell.DataType {
 			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
@@ -217,7 +237,7 @@ func (cell *Cell) Set(value any, nonptr bool, x, y int) {
 		}
 	}
 
-	if cell.DataType != "" && cell.DataType != "any" && getValueType(value) != cell.DataType {
+	if cell.DataType != "" && cell.DataType != "any" && getValueType(value) != cell.DataType && !(value == nil && !slices.Contains(nonvoidDatatypes, cell.DataType)) {
 		throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 	}
 
@@ -337,11 +357,16 @@ func (cell *Cell) Set(value any, nonptr bool, x, y int) {
 			cell.Ptr = unsafe.Pointer(&cell.PtrValue)
 		}
 	case "error":
-		cell.Bits = 0
 		cell.ErrorValue = value.(error)
 
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(&cell.ErrorValue)
+		}
+	case "any":
+		cell.AnyValue = value
+
+		if !nonptr {
+			cell.Ptr = unsafe.Pointer(&cell.AnyValue)
 		}
 	case "void":
 		cell.Clear()
@@ -380,6 +405,7 @@ func (cell *Cell) Clear() {
 	cell.StructValue = nil
 	cell.TableValue = nil
 	cell.TempBuf = nil
+	cell.AnyValue = nil
 
 	cell.Ptr = nil
 
@@ -433,13 +459,11 @@ func (cell *Cell) Get() any {
 		return cell.FuncValue
 	case "error":
 		return cell.ErrorValue
+	case "any":
+		return cell.AnyValue
 	case "nil":
 		return nil
 	default:
-		if cell.InstanceValue == nil {
-			panic("Omagash")
-		}
-
 		return cell.InstanceValue
 	}
 	panic("Idk")
@@ -449,12 +473,12 @@ func (cell *Cell) GetAddress() unsafe.Pointer {
 	return cell.Ptr
 }
 
-func CLPTR(scope *Scope, v any, x, y int) *Cell {
+func CLPTR(scope *Scope, dataType string, v any, x, y int) *Cell {
 	cell := &Cell{
 		Scope: scope,
 	}
 
-	cell.Set(v, false, x, y)
+	cell.InitFromRaw(v, dataType, false, x, y)
 
 	return cell
 }
@@ -467,7 +491,8 @@ func checkType[T any](v any) bool {
 type Map struct {
 	*orderedmap.OrderedMap[any, *Cell]
 
-	Bits     int8
+	DataType string
+
 	Pointers []any
 	Layout   []string
 	Mem      []byte
@@ -482,91 +507,57 @@ func anyToBytes(v []any, m *Map) []byte {
 	for i, x := range v {
 		switch t := x.(type) {
 		case int64, int32, int16, int8, uint8, uint16, uint32, uint64:
-			prefix := "u"
-			layout := "int"
-			if m.Bits != 0 {
-				if m.Bits < 0 {
-					prefix = ""
-				}
-				layout = prefix + layout + numtostr(int64(math.Abs(float64(m.Bits))))
-
-				m.Layout[i] = layout
-				m.Pointers[i] = nil
-
-				binary.Write(buf, binary.LittleEndian, toInt(toInt64(t), int(m.Bits)))
-				break
-			}
-
-			m.Layout[i] = layout
+			m.Layout[i] = getValueType(t)
 			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, t)
 		case float64, float32:
-			layout := "float"
-			if m.Bits == 32 {
-				layout = "float32"
-
-				m.Layout[i] = layout
-				m.Pointers[i] = nil
-
-				binary.Write(buf, binary.LittleEndian, float32(mustNTOF64(t)))
-				break
-			} else if m.Bits == 64 {
-				layout = "float64"
-
-				m.Layout[i] = layout
-				m.Pointers[i] = nil
-
-				binary.Write(buf, binary.LittleEndian, mustNTOF64(t))
-				break
-			}
-
-			m.Layout[i] = layout
+			m.Layout[i] = getValueType(t)
 			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, t)
 		case bool:
-			m.Layout[i] = "bool"
+			m.Layout[i] = getValueType(t)
 			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, t)
 		case string:
-			m.Layout[i] = "string"
+			m.Layout[i] = getValueType(t)
 			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, append([]byte(t), 0))
 		case error:
-			m.Layout[i] = "error"
+			m.Layout[i] = getValueType(t)
 			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, append([]byte(t.Error()), 0))
 		case uintptr:
-			m.Layout[i] = "error"
+			m.Layout[i] = getValueType(t)
 			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, uint64(t))
 		case unsafe.Pointer:
-			m.Layout[i] = "ptr"
+			m.Layout[i] = getValueType(t)
 			m.Pointers[i] = nil
 
 			binary.Write(buf, binary.LittleEndian, uint64(uintptr(t)))
 		case *Map:
-			m.Layout[i] = "table"
+			m.Layout[i] = getValueType(t)
 			m.Pointers[i] = t
 
 			binary.Write(buf, binary.LittleEndian, uint32(len(t.Mem)))
 			buf.Write(t.Mem)
+		case nil:
+			m.Layout[i] = getValueType(t)
+			m.Pointers[i] = nil
+
+			binary.Write(buf, binary.LittleEndian, 0)
 		case *StructObject:
 			m.Layout[i] = "instance"
 			m.Pointers[i] = t
 
 			binary.Write(buf, binary.LittleEndian, uint32(len(t.LastMem)))
 			buf.Write(t.LastMem)
-		case nil:
-			m.Layout[i] = "uint"
-			m.Pointers[i] = nil
-
-			binary.Write(buf, binary.LittleEndian, 0)
 		default:
 			fmt.Printf("%T\n", t)
 			panic("Unsupported type")
@@ -598,59 +589,59 @@ func bytesToAny(mem []byte, layout []string, pointers []any) []any {
 
 			m.Mem = b
 			res[i] = m
-		case "int", "int64":
+		case "i64":
 			var v int64
 			binary.Read(r, binary.LittleEndian, &v)
 
 			res[i] = v
-		case "int32":
+		case "i32":
 			var v int32
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res[i] = int64(v)
-		case "int16":
+			res[i] = v
+		case "i16":
 			var v int16
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res[i] = int64(v)
-		case "int8":
+			res[i] = v
+		case "i8":
 			var v int8
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res[i] = int64(v)
+			res[i] = v
 		//Unsigned!
-		case "uint":
-			var v uint64
-			binary.Read(r, binary.LittleEndian, &v)
-
-			res[i] = int64(v)
-		case "uint32":
+		case "u32":
 			var v uint32
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res[i] = int64(v)
-		case "uint16":
+			res[i] = v
+		case "u16":
 			var v uint16
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res[i] = int64(v)
-		case "uint8":
+			res[i] = v
+		case "u8":
 			var v uint8
 			binary.Read(r, binary.LittleEndian, &v)
 
-			res[i] = int64(v)
-		case "ptr", "uint64":
+			res[i] = v
+		case "u64":
+			var v uint64
+			binary.Read(r, binary.LittleEndian, &v)
+
+			res[i] = v
+		case "pointer":
 			var v uint64
 			binary.Read(r, binary.LittleEndian, &v)
 
 			res[i] = uintptr(v)
 		//Unsigned end!
-		case "float", "float64":
+		case "f64":
 			var v float64
 			binary.Read(r, binary.LittleEndian, &v)
 
 			res[i] = v
-		case "float32":
+		case "f32":
 			var v float32
 			binary.Read(r, binary.LittleEndian, &v)
 
@@ -1179,6 +1170,8 @@ func toInt64(v any) int64 {
 		return int64(val)
 	case uint8:
 		return int64(val)
+	case rawint64:
+		return int64(val)
 	case unsafe.Pointer:
 		return int64(uintptr(val))
 	case float64:
@@ -1203,6 +1196,8 @@ func toUint64(v any) uint64 {
 	case uint32:
 		return uint64(val)
 	case int64:
+		return uint64(val)
+	case rawint64:
 		return uint64(val)
 	case uint64:
 		return val
@@ -1365,7 +1360,7 @@ func format(v ...any) string {
 
 		switch a := a.(type) {
 		case *Map:
-			mapFormat := "{%s}"
+			mapFormat := "%s{%s}"
 			elemFormat := "[%s]: %s,"
 
 			var elements string
@@ -1380,12 +1375,16 @@ func format(v ...any) string {
 				i++
 			}
 
-			formated += fmt.Sprintf(mapFormat, elements) + suffix
+			formated += fmt.Sprintf(mapFormat, a.DataType, elements) + suffix
 		case error:
 			formated += fmt.Sprint(a.Error()) + suffix
 		case *FuncDec, *Structure:
 			formated += fmt.Sprintf("%p", a) + suffix
 		case *StructObject:
+			if a == nil {
+				return formated + format(nil) + suffix
+			}
+
 			structFormat := "%s{%s}"
 			fieldFormat := "%s: %s;"
 
@@ -1467,31 +1466,6 @@ func importModule(path string, mainScope *Scope, x, y int) {
 		return
 	}
 	throwNoPos("Invalid file or library '%s'", path)
-}
-
-func mapToSlice[T any](m *Map) []T {
-	slice := make([]T, m.Len())
-
-	var t T
-
-	for k, v := range m.AllFromFront() {
-		kind := reflect.ValueOf(t).Kind()
-
-		switch kind {
-		case reflect.Uint8:
-			if reflect.ValueOf(v.Get()).Kind() == reflect.Float64 {
-				fk, _ := numberToFloat64(k)
-				slice[int(fk)] = any(byte(v.Get().(float64))).(T)
-				break
-			}
-			fallthrough
-		default:
-			fk, _ := numberToFloat64(k)
-			slice[int(fk)] = v.Get().(T)
-		}
-	}
-
-	return slice
 }
 
 func mapToSliceAny(m *Map) []any {
@@ -1591,6 +1565,13 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 
 	f := binOperations[node.operator]
 
+	if checkType[rawint64](l) {
+		l = int64(l.(rawint64))
+	}
+	if checkType[rawint64](r) {
+		r = int64(r.(rawint64))
+	}
+
 	return f(inter, l, r, node.X, node.Y)
 }
 
@@ -1598,6 +1579,8 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 	switch node := node.(type) {
 	case *NilNode:
 		return nil
+	case *KeyNilNode:
+		return node
 	case *IntNode:
 		return node.Value
 	case *FloatNode:
@@ -1745,6 +1728,9 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 	}
 
 	key := keys[index]
+	if checkType[rawint64](key) {
+		key = int64(key.(rawint64))
+	}
 
 	tableCell, iscell := table.(*Cell)
 	if iscell {
@@ -1772,20 +1758,21 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 		}
 		return val
 	case string:
-		key, ok := numberToFloat64(key)
-		if ok {
-			i := int(key)
-			if i >= len(table) || i < 0 {
-				throw(inter.CurrentFileName, "Attempt to index a character beyond the string limit.", getElemN.X, getElemN.Y)
-			}
-			if index+1 != len(keys) {
-				throw(inter.CurrentFileName, "Repeated indexing of a character is not allowed.", getElemN.X, getElemN.Y)
-			}
-
-			char := string([]rune(table)[i])
-
-			return char
+		if !checkDataType("int", key) {
+			throw(inter.CurrentFileName, "Attempt to index string with non-integer value; '%s'", getElemN.X, getElemN.Y, getValueType(key))
 		}
+
+		i := int(toInt64(key))
+		if i >= len(table) || i < 0 {
+			throw(inter.CurrentFileName, "Attempt to index a character beyond the string limit.", getElemN.X, getElemN.Y)
+		}
+		if index+1 != len(keys) {
+			throw(inter.CurrentFileName, "Repeated indexing of a character is not allowed.", getElemN.X, getElemN.Y)
+		}
+
+		char := string([]rune(table)[i])
+
+		return char
 	}
 	throw(inter.CurrentFileName, "Attempt to index non-table value.", getElemN.X, getElemN.Y)
 	return nil
@@ -1797,6 +1784,9 @@ func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *Ge
 	}
 
 	key := keys[index]
+	if checkType[rawint64](key) {
+		key = int64(key.(rawint64))
+	}
 
 	switch table := table.(type) {
 	case *Map:
@@ -1804,7 +1794,7 @@ func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *Ge
 			if index+1 < len(keys) {
 				throw(inter.CurrentFileName, "Attempt to index non-table value.", getElemN.X, getElemN.Y)
 			} else {
-				return CLPTR(inter.CurrentScope, nil, getElemN.X, getElemN.Y)
+				return CLPTR(inter.CurrentScope, "void", nil, getElemN.X, getElemN.Y)
 			}
 		}
 
@@ -1911,8 +1901,14 @@ func (inter *Interpreter) GetInstanceFieldCell(getFieldNode *GetFieldNode) *Cell
 func (inter *Interpreter) GetMap(node *MapNode) *Map {
 	m := orderedmap.NewOrderedMap[any, *Cell]()
 
-	for _, element := range node.Map {
+	elemDataType := node.ElemDataType.Value
+
+	for i, element := range node.Map {
 		key, value := inter.GetNodeValueS(element.Key, element.X, element.Y), inter.GetNodeValueS(element.Value, element.X, element.Y)
+
+		if checkType[*KeyNilNode](key) {
+			key = int64(i)
+		}
 
 		values, ok := value.([]any)
 		if ok {
@@ -1922,23 +1918,13 @@ func (inter *Interpreter) GetMap(node *MapNode) *Map {
 				throw(inter.CurrentFileName, "Cannot assign a field cannot be an empty value.", element.X, element.Y)
 			}
 
-			m.Set(key, CLPTR(inter.CurrentScope, values[0], element.X, element.Y))
+			m.Set(key, CLPTR(inter.CurrentScope, elemDataType, values[0], element.X, element.Y))
 		} else {
-			m.Set(key, CLPTR(inter.CurrentScope, value, element.X, element.Y))
+			m.Set(key, CLPTR(inter.CurrentScope, elemDataType, value, element.X, element.Y))
 		}
 	}
 
-	b := int8(0)
-	if node.Bits != nil {
-		bits, ok := inter.GetNodeValueS(node.Bits, node.X, node.Y).(int64)
-		if !ok {
-			throw(inter.CurrentFileName, "Bits amount must be an integer value.", node.X, node.Y)
-		}
-
-		b = int8(bits)
-	}
-
-	fmap := &Map{m, b, []any{}, []string{}, []byte{}}
+	fmap := &Map{m, elemDataType, []any{}, []string{}, []byte{}}
 	fmap.ToMemory()
 
 	return fmap
@@ -2081,7 +2067,7 @@ func (inter *Interpreter) SetTableElementValue(table *Map, keys []any, value any
 		switch elem := elem.Value.Get().(type) {
 		case *Map:
 			if index+1 >= len(keys) {
-				table.Set(key, CLPTR(inter.CurrentScope, value, x, y))
+				table.Set(key, CLPTR(inter.CurrentScope, table.DataType, value, x, y))
 
 				elem.ToMemory()
 				break
@@ -2090,7 +2076,7 @@ func (inter *Interpreter) SetTableElementValue(table *Map, keys []any, value any
 			return
 		}
 	}
-	table.Set(key, CLPTR(inter.CurrentScope, value, x, y))
+	table.Set(key, CLPTR(inter.CurrentScope, table.DataType, value, x, y))
 	table.ToMemory()
 }
 

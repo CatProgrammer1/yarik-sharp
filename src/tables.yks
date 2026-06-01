@@ -1,41 +1,10 @@
-func make(lenght, defaultVal, bits) {
-    if gettype(lenght) != "int" {
-        throw("Lenght argument must be an integer")
-    }
-
-    yar newbuf = void
-    if gettype(bits) != "int" {
-        newbuf = []
-    }else {
-        newbuf = [] <- bits
-    }
-
-    yar i = 0
-    while i <= lenght {
-        newbuf[i] = defaultVal
-        i = i + 1
-    }
-
-    return newbuf
-}
-
-func write(buf, data) {
-    if gettype(buf) != "table" {
-        throw("Buffer argument must be a table")
-    }else if gettype(bits) != "int" {
-        throw("Data argument must be a table")
-    }
-
+func write(buf table, data table) {
     foreach i, v = data {
         buf[i] = v
     }
 }
 
-func findElement(table, elem) {
-    if gettype(table) != "table" {
-        throw("Table argument must be a table")
-    }
-
+func findElement(table table, elem any) {
     foreach k, v = table {
         if v == elem {
             return k

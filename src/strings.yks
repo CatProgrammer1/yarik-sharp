@@ -1,10 +1,6 @@
 import "tables"
 
-func cut(str, i, j) {
-	if gettype(str) != "string" {
-		throw("String argument must be a string value")
-	}
-
+func cut(str string, i u64, j u64) {
 	if i > j {
 		return ""
 	}
@@ -12,7 +8,7 @@ func cut(str, i, j) {
 		throw("Attempt to cut more characters than string has")
 	}
 
-	yar cutStr = ""
+	yar cutStr string = ""
 	while i <= j {
 		cutStr = cutStr + str[i]
 
@@ -22,27 +18,27 @@ func cut(str, i, j) {
 	return cutStr
 }
 
-func hasPrefix(str, prefix) {
+func hasPrefix(str string, prefix string) {
 	if len(prefix) > len(str) {
 		return false
 	}
 
-	yar prefixCut = cut(str, 0, len(prefix)-1)
+	yar prefixCut string = cut(str, 0, len(prefix)-1)
 	
 	return prefixCut == prefix
 }
 
-func hasSuffix(str, suffix) {
+func hasSuffix(str string, suffix string) {
 	if len(suffix) > len(str) {
 		return false
 	}
 
-	yar suffixCut = cut(str, len(str)-len(suffix), len(str)-1)
+	yar suffixCut string = cut(str, len(str)-len(suffix), len(str)-1)
 	
 	return suffixCut == suffix
 }
 
-func cutPrefix(str, prefix) {
+func cutPrefix(str string, prefix string) {
 	if hasPrefix(str, prefix) != true {
 		return "", false
 	}
@@ -50,7 +46,7 @@ func cutPrefix(str, prefix) {
 	return cut(str, len(prefix)-1, len(str)-1), true
 }
 
-func cutSuffix(str, prefix) {
+func cutSuffix(str string, prefix string) {
 	if hasSuffix(str, prefix) != true {
 		return "", false
 	}
@@ -58,19 +54,13 @@ func cutSuffix(str, prefix) {
 	return cut(str, 0, len(str)-len(prefix)-1), true
 }
 
-func split(str, separator) {
-	if gettype(str) != "string" {
-		throw("String argument must be a string value")
-	}else if gettype(separator) != "string" {
-		throw("Separator argument must be a string value")
-	}
+func split(str string, separator string) {
+	yar separated table = []
+	yar savedStr string = ""
 
-	yar separated = []
-	yar savedStr = ""
-
-	yar i = 0
+	yar i u64 = 0
 	while i < len(str) {
-		yar char = str[i]
+		yar char string = str[i]
 		if char == separator {
 			if len(savedStr) > 0 {
 				append(separated, savedStr)
@@ -90,19 +80,14 @@ func split(str, separator) {
 	return separated
 }
 
-func findSubstring(str, substr) {
-	if gettype(str) != "string" {
-		throw("String argument must be a string value")
-	}else if gettype(substr) != "string" {
-		throw("Sub-string argument must be a string value")
-	}
+func findSubstring(str string, substr string) {
 	if len(substr) > len(str) {
 		return -1, -1
 	}
 
 	yar offset = len(substr)-1
 
-	yar i = 0
+	yar i i = 0
 	while i+offset < len(str) {
 		yar nsubstr = cut(str, i, i+offset)
 		if nsubstr == substr {

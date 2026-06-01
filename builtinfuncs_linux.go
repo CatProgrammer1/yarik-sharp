@@ -210,9 +210,9 @@ var (
 				case *StructObject:
 					layout := value.Layout()
 
-					value.FromMemoryLayout(layout)
+					value.FromMemoryLayout(layout, x, y)
 				case *Map:
-					value.FromMemory()
+					value.FromMemory(x, y)
 				}
 			}
 
@@ -256,35 +256,13 @@ var (
 				case *StructObject:
 					layout := value.Layout()
 
-					value.FromMemoryLayout(layout)
+					value.FromMemoryLayout(layout, x, y)
 				case *Map:
-					value.FromMemory()
+					value.FromMemory(x, y)
 				}
 			}
 
 			return []any{r1, r2, err}
-		},
-
-		"ptr": func(v ...any) []any {
-			argsCheck(v, 1, 1, "int")
-
-			v = v[BUILTIN_SPECIALS:]
-
-			return []any{uintptr(
-				toInt64(v[0]),
-			)}
-		},
-
-		"pvoid": func(v ...any) []any {
-			argsCheck(v, 1, 1, "int")
-
-			v = v[BUILTIN_SPECIALS:]
-
-			return []any{unsafe.Pointer(
-				uintptr(
-					toInt64(v[0]),
-				),
-			)}
 		},
 	}
 )

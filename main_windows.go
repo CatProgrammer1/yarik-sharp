@@ -68,16 +68,6 @@ func numtostr(v any) string {
 	return s
 }
 
-func numberToFloat64(n any) (float64, bool) {
-	switch n := n.(type) {
-	case float64:
-		return n, true
-	case int64:
-		return float64(n), true
-	}
-	return 0, false
-}
-
 func numberToInt(n any) (int64, bool) {
 	switch n := n.(type) {
 	case float64:
@@ -94,7 +84,7 @@ func mustNTOF64(n any) float64 {
 		return n
 	case float32:
 		return float64(n)
-	case int64, int32, int, int16, int8:
+	case int64, int32, int, int16, int8, rawint64:
 		return float64(toInt64(n))
 	case uint8, uint16, uint, uint32, uint64:
 		return float64(toUint64(n))
@@ -133,6 +123,7 @@ func getValueType(v any) string {
 	case *Map:
 		return "table"
 	case *StructObject:
+		println(v)
 		return v.Identifier
 	case *Structure:
 		return "struct"
@@ -145,8 +136,7 @@ func getValueType(v any) string {
 	case error:
 		return "error"
 	}
-	fmt.Printf("%T\n", v)
-	return "any"
+	return "unknown"
 }
 
 func checkDataType(expected string, v any) bool {
@@ -180,7 +170,7 @@ func checkDataType(expected string, v any) bool {
 		return false
 	case "int":
 		switch v.(type) {
-		case int64, int32, int16, int8, uint8, uint16, uint32, uint64:
+		case int64, int32, int16, int8, uint8, uint16, uint32, uint64, rawint64:
 			return true
 		}
 
@@ -310,7 +300,7 @@ func loadLibraryIntoScope(interpreter_filename string, importPath string, node *
 	}
 
 	name, _ := strings.CutSuffix(filepath.Base(library.Name), ".dll")
-	scope.Data[name] = CLPTR(scope, &FuncDec{
+	scope.Data[name] = CLPTR(scope, "func", &FuncDec{
 		Identifier: IdentNode{
 			Value: name,
 			X:     node.X,
@@ -319,6 +309,7 @@ func loadLibraryIntoScope(interpreter_filename string, importPath string, node *
 		Template: func(v ...any) []any {
 			argsCheck(v, 1, 1, "string")
 
+			inter := v[2].(*Interpreter)
 			x, y := v[0].(int), v[1].(int)
 
 			v = v[BUILTIN_SPECIALS:]
@@ -331,7 +322,7 @@ func loadLibraryIntoScope(interpreter_filename string, importPath string, node *
 
 			suc := scope.Add(proc, "DLL_PROC", "string", x, y)
 			if !suc {
-				throwNoPos("unsuccessfull")
+				throw(inter.CurrentFileName, "unsuccessfull", x, y)
 			}
 
 			return []any{proc.Addr()}

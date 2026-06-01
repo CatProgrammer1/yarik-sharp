@@ -55,6 +55,17 @@ func (nilNode *NilNode) Line() int {
 	return nilNode.Y
 }
 
+type KeyNilNode struct {
+	X, Y int
+}
+
+func (keyNilNode *KeyNilNode) Position() int {
+	return keyNilNode.X
+}
+func (keyNilNode *KeyNilNode) Line() int {
+	return keyNilNode.Y
+}
+
 type SetVar struct {
 	Var   []IdentNode
 	Value [][]Node
@@ -196,9 +207,9 @@ func (elem *Element) Line() int {
 }
 
 type MapNode struct {
-	Map  []*Element
-	Bits []Node
-	X, Y int
+	Map          []*Element
+	ElemDataType IdentNode
+	X, Y         int
 }
 
 func (mapNode *MapNode) Position() int {

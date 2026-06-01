@@ -36,9 +36,9 @@ var (
 		"new":      "newstruct",
 		"struct":   "struct",
 
-		"@external": "external_import",
+		"<-": "table_datatypes_init",
 
-		"<-":    "tableelembits",
+		"@external": "external_import",
 
 		"?": "asserttype",
 

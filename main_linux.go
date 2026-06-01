@@ -15,6 +15,14 @@ func floatIsInt(f float64) bool {
 	return math.Trunc(f) == f
 }
 
+func twoDigitStr(str string) int {
+	if len(str) < 2 {
+		return int(str[0] - '0')
+	}
+
+	return int(str[0]-'0')*10 + int(str[1]-'0')
+}
+
 func argsCheck(v []any, min, max int, expectedDataTypes ...string) {
 	if min == 0 && max == 0 {
 		return
