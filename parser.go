@@ -179,9 +179,18 @@ func newDataTypeNode(token Token) Node {
 
 	switch token.Type {
 	case "int":
-		return &IntNode{
-			token.Value.(rawint64),
-			x, y,
+		if checkType[rawuint64](token.Value) {
+			return &IntNode{
+				0,
+				token.Value.(rawuint64),
+				x, y,
+			}
+		} else {
+			return &IntNode{
+				token.Value.(rawint64),
+				0,
+				x, y,
+			}
 		}
 	case "float":
 		return &FloatNode{
@@ -1167,6 +1176,8 @@ VARPAR:
 				token = parser.CurrentToken
 
 				varDec.DataTypes = append(varDec.DataTypes, IdentNode{token.Value.(string), x, y})
+			} else {
+				varDec.DataTypes = append(varDec.DataTypes, IdentNode{"any", x, y})
 			}
 
 			parser.Next()

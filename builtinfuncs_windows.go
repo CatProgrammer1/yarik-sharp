@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"runtime"
 	"strconv"
@@ -173,9 +174,12 @@ var (
 		APPEND:
 			for _, v := range b.AllFromFront() {
 				switch v := v.Get().(type) {
-				case int64, int32, int, int16, int8:
-					bstring = append(bstring, toInt(toInt64(v), 8).(byte))
+				case int64, int32, int16, int8, uint8, uint16, uint32, uint64:
+					charByte := toUint(toUint64(v), 8).(byte)
+
+					bstring = append(bstring, charByte)
 				default:
+					log.Println("Unknown datatype lol the developer is such a shitcoder")
 					break APPEND
 				}
 			}
@@ -304,9 +308,7 @@ func valueToPtr(inter *Interpreter, v any, x, y int) (uintptr, any) {
 	case nil:
 		return 0, nil
 	default:
-		fmt.Printf("%T\n", val)
-		println(val)
-		throw(inter.CurrentFileName, "Unsupported type, unable to get pointer address.", x, y)
+		throw(inter.CurrentFileName, "Unsupported type: '%s', unable to get pointer address.", x, y, getValueType(val))
 	}
 	return 0, nil
 }
@@ -314,11 +316,19 @@ func valueToPtr(inter *Interpreter, v any, x, y int) (uintptr, any) {
 func syscallAddress(inter *Interpreter, node Node, argsLen uint, argsValues [][]Node, addr uintptr) (uintptr, uintptr, error) { //go run yks run test.yks
 	args := inter.CookValues(argsLen, argsValues, node.Position(), node.Line())
 
+	for i, argument := range args {
+		switch argument := argument.(type) {
+		case rawuint64:
+			args[i] = uint64(argument)
+		case rawint64:
+			args[i] = int64(argument)
+		}
+	}
+
 	params := make([]uintptr, len(args))
 	buffers := make([]any, len(args))
 	i := 0
 
-	//println("Debug 2")
 	for _, v := range args {
 		ptr, buf := valueToPtr(inter, v, node.Position(), node.Line())
 		if buf != nil {

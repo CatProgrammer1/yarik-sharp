@@ -10,6 +10,7 @@ import (
 )
 
 type rawint64 int64
+type rawuint64 uint64
 
 const (
 	boolTrue  = "true"
@@ -123,6 +124,12 @@ func strToFloat(str string) (float64, error) {
 
 func strToInt(str string) (int64, error) {
 	n, err := strconv.ParseInt(str, 0, 64)
+
+	return n, err
+}
+
+func strToUint(str string) (uint64, error) {
+	n, err := strconv.ParseUint(str, 0, 64)
 
 	return n, err
 }
@@ -348,8 +355,13 @@ func (lexer *Lexer) GetNumber() Token {
 		n, err := strToInt(number)
 		if errors.Is(err, strconv.ErrSyntax) {
 			throw(lexer.CurrentFileName, "Invalid integer syntax: '%s'", lexer.CurrentColumn, lexer.CurrentLine, number)
-		} else {
-			handle(err)
+		} else if err != nil {
+			n, err := strToUint(number)
+			if err != nil {
+				throw(lexer.CurrentFileName, "Integer value out of range syntax: '%s'", lexer.CurrentColumn, lexer.CurrentLine, number)
+			}
+
+			return NewToken(rawuint64(n), "int", lexer.CurrentPosition, lexer.CurrentLine)
 		}
 
 		return NewToken(rawint64(n), "int", lexer.CurrentPosition, lexer.CurrentLine)

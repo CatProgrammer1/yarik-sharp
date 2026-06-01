@@ -123,7 +123,6 @@ func getValueType(v any) string {
 	case *Map:
 		return "table"
 	case *StructObject:
-		println(v)
 		return v.Identifier
 	case *Structure:
 		return "struct"

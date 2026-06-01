@@ -146,7 +146,8 @@ func (numNode *NumNode) Line() int {
 }*/
 
 type IntNode struct {
-	Value rawint64
+	ValueI64 rawint64
+	ValueU64 rawuint64
 	X, Y  int
 }
 

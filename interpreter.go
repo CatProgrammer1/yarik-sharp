@@ -110,7 +110,8 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 		bits := uint8(twoDigitStr(dataType[1:]))
 
 		rawInt64 := checkType[rawint64](value)
-		if !rawInt64 && cell.DataType != getValueType(value) {
+		rawUint64 := checkType[rawuint64](value)
+		if !rawInt64 && !rawUint64 && cell.DataType != getValueType(value) {
 			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 		}
 		if !rawInt64 {
@@ -130,19 +131,24 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 	case "u8", "u16", "u32", "u64":
 		bits := uint8(twoDigitStr(dataType[1:]))
 
-		if !checkType[rawint64](value) {
+		rawInt64 := checkType[rawint64](value)
+		rawUint64 := checkType[rawuint64](value)
+		if !rawInt64 && !rawUint64 && cell.DataType != getValueType(value) {
 			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+		if !rawUint64 {
+			value = rawuint64(toUint64(value))
 		}
 
 		switch bits {
 		case 8:
-			cell.Set(uint8(value.(rawint64)), false, x, y)
+			cell.Set(uint8(value.(rawuint64)), false, x, y)
 		case 16:
-			cell.Set(uint16(value.(rawint64)), false, x, y)
+			cell.Set(uint16(value.(rawuint64)), false, x, y)
 		case 32:
-			cell.Set(uint32(value.(rawint64)), false, x, y)
+			cell.Set(uint32(value.(rawuint64)), false, x, y)
 		case 64:
-			cell.Set(uint64(value.(rawint64)), false, x, y)
+			cell.Set(uint64(value.(rawuint64)), false, x, y)
 		}
 	case "f32", "f64":
 		bits := uint8(twoDigitStr(dataType[1:]))
@@ -207,8 +213,11 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 
 		cell.Set(nil, false, x, y)
 	case "any":
-		if checkType[rawint64](value) {
-			value = int64(value.(rawint64))
+		switch v := value.(type) {
+		case rawint64:
+			value = int64(v)
+		case rawuint64:
+			value = uint64(v)
 		}
 
 		cell.Set(value, false, x, y)
@@ -228,12 +237,20 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 }
 
 func (cell *Cell) Set(value any, nonptr bool, x, y int) {
-	if checkType[rawint64](value) {
+	switch avalue := value.(type) {
+	case rawint64:
 		bits := twoDigitStr(cell.DataType[1:])
 		if strings.HasPrefix(cell.DataType, "i") {
-			value = toInt(int64(value.(rawint64)), -bits)
+			value = toInt(int64(avalue), -bits)
 		} else {
-			value = toInt(int64(value.(rawint64)), bits)
+			value = toInt(int64(avalue), bits)
+		}
+	case rawuint64:
+		bits := twoDigitStr(cell.DataType[1:])
+		if strings.HasPrefix(cell.DataType, "i") {
+			value = toInt(int64(avalue), -bits)
+		} else {
+			value = toUint(uint64(avalue), bits)
 		}
 	}
 
@@ -1152,8 +1169,6 @@ func ftoInt(v float64, bits int) any {
 
 func toInt64(v any) int64 {
 	switch val := v.(type) {
-	case int:
-		return int64(val)
 	case int32:
 		return int64(val)
 	case uint32:
@@ -1172,6 +1187,8 @@ func toInt64(v any) int64 {
 		return int64(val)
 	case rawint64:
 		return int64(val)
+	case rawuint64:
+		return int64(val)
 	case unsafe.Pointer:
 		return int64(uintptr(val))
 	case float64:
@@ -1185,7 +1202,9 @@ func toInt64(v any) int64 {
 
 func toUint64(v any) uint64 {
 	switch val := v.(type) {
-	case int:
+	case int8:
+		return uint64(val)
+	case uint8:
 		return uint64(val)
 	case int16:
 		return uint64(val)
@@ -1198,6 +1217,8 @@ func toUint64(v any) uint64 {
 	case int64:
 		return uint64(val)
 	case rawint64:
+		return uint64(val)
+	case rawuint64:
 		return uint64(val)
 	case uint64:
 		return val
@@ -1511,8 +1532,10 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 		}*/
 
 		rtype := checkDataType("number", value)
-		if rtype || checkType[rawint64](value) {
+		if rtype || checkType[rawint64](value) || checkType[rawuint64](value) {
 			switch value := value.(type) {
+			case rawuint64:
+				return -value
 			case rawint64:
 				return -value
 			case int64:
@@ -1524,13 +1547,13 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 			case int8:
 				return -value
 			case uint64:
-				return -int64(value)
+				return -value
 			case uint32:
-				return -int32(value)
+				return -value
 			case uint16:
-				return -int16(value)
+				return -value
 			case uint8:
-				return -int8(value)
+				return -value
 			case float64:
 				return -value
 			case float32:
@@ -1577,6 +1600,13 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 		r = int64(r.(rawint64))
 	}
 
+	if checkType[rawuint64](l) {
+		l = uint64(l.(rawuint64))
+	}
+	if checkType[rawuint64](r) {
+		r = uint64(r.(rawuint64))
+	}
+
 	return f(inter, l, r, node.X, node.Y)
 }
 
@@ -1587,7 +1617,11 @@ func (inter *Interpreter) GetNodeValue(node Node) any {
 	case *KeyNilNode:
 		return node
 	case *IntNode:
-		return node.Value
+		if node.ValueI64 == 0 && node.ValueU64 > 0 {
+			return node.ValueU64
+		} else {
+			return node.ValueI64
+		}
 	case *FloatNode:
 		return node.Value
 	case *StrNode:
@@ -1736,6 +1770,9 @@ func (inter *Interpreter) GetTableValueByKeys(table any, keys []any, getElemN *G
 	if checkType[rawint64](key) {
 		key = int64(key.(rawint64))
 	}
+	if checkType[rawuint64](key) {
+		key = uint64(key.(rawuint64))
+	}
 
 	tableCell, iscell := table.(*Cell)
 	if iscell {
@@ -1791,6 +1828,9 @@ func (inter *Interpreter) GetTableCellByKeys(table any, keys []any, getElemN *Ge
 	key := keys[index]
 	if checkType[rawint64](key) {
 		key = int64(key.(rawint64))
+	}
+	if checkType[rawuint64](key) {
+		key = uint64(key.(rawuint64))
 	}
 
 	switch table := table.(type) {
@@ -1973,8 +2013,26 @@ func (inter *Interpreter) CallFunction(node *FuncCall) []any {
 				argsValues[i] = []Node{argNode}
 			}
 
+			cookedValues := inter.CookValues(
+				uint(len(node.Arguments)),
+				argsValues,
+				node.X,
+				node.Y,
+			)
+
+			for i, cookedValue := range cookedValues {
+				switch cookedValue := cookedValue.(type) {
+				case rawuint64:
+					cookedValues[i] = uint64(cookedValue)
+				case rawint64:
+					cookedValues[i] = int64(cookedValue)
+				}
+			}
+
 			result := funcDec.Template(
-				append(args, inter.CookValues(uint(len(node.Arguments)), argsValues, node.X, node.Y)...)...,
+				append(args,
+					cookedValues...,
+				)...,
 			)
 
 			return result
@@ -2336,6 +2394,7 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 			if ident.Value == "_" {
 				continue
 			}
+
 			if !inter.CurrentScope.Add(ident.Value, readyValues[i], node.DataTypes[i].Value, node.X, node.Y) {
 				throw(inter.CurrentFileName, "Attempt to redeclare a variable '%s'.", node.X, node.Y, ident.Value)
 			}

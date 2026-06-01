@@ -9,7 +9,7 @@ struct File {
     h pointer,
     func read(buf table) {
         if len(buf) == 0 {
-            buf = make(1024, 0, 8)
+            buf = make(1024, "u8", 0?u8)
         }
 
         yar _, _, err error = kernelReadFile(
