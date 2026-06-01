@@ -55,7 +55,7 @@ func cutSuffix(str string, prefix string) {
 }
 
 func split(str string, separator string) {
-	yar separated table = []
+	yar separated table = [] <- string
 	yar savedStr string = ""
 
 	yar i u64 = 0
@@ -85,11 +85,11 @@ func findSubstring(str string, substr string) {
 		return -1, -1
 	}
 
-	yar offset = len(substr)-1
+	yar offset i64 = len(substr)-1
 
-	yar i i = 0
+	yar i i64 = 0
 	while i+offset < len(str) {
-		yar nsubstr = cut(str, i, i+offset)
+		yar nsubstr string = cut(str, i, i+offset)
 		if nsubstr == substr {
 			return i, i+offset
 		}

@@ -1506,10 +1506,15 @@ func NewInterpreter(filename string, ast []Node) *Interpreter {
 func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 	if node.operator == "sub" && node.L == nil && node.R != nil {
 		value := inter.GetNodeValue(node.R)
+		/*if checkType[rawint64](value) {
+			value = int64(value.(rawint64))
+		}*/
 
 		rtype := checkDataType("number", value)
-		if rtype {
+		if rtype || checkType[rawint64](value) {
 			switch value := value.(type) {
+			case rawint64:
+				return -value
 			case int64:
 				return -value
 			case int32:

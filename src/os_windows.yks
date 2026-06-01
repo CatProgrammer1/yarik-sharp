@@ -8,7 +8,7 @@ yar kernelReadFile pointer, kernelWriteFile pointer, kernelCreateFileW pointer, 
 struct File {
     h pointer,
     func read(buf table) {
-        if buf == void {
+        if len(buf) == 0 {
             buf = make(1024, 0, 8)
         }
 
@@ -23,10 +23,6 @@ struct File {
         return buf, err
     }
      func write(buf table) {
-        if buf == void {
-            throw("Write buffer cannot be a 'void' value")
-        }
-
         yar _, _, err error = kernelWriteFile(
             this->h,
             buf,
