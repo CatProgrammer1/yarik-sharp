@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -228,6 +229,23 @@ var (
 			return []any{m}
 		},
 
+		"cstring": func(v ...any) []any {
+			argsCheck(v, 1, 1, "string")
+
+			v = v[BUILTIN_SPECIALS:]
+
+			str := v[0].(string)
+
+			slicePtr, err := syscall.BytePtrFromString(str)
+			if err == nil {
+				err = errors.New("Successfull")
+			}
+
+			return []any{
+				uintptr(unsafe.Pointer(slicePtr)), err,
+			}
+		},
+
 		"bytes": func(v ...any) []any {
 			argsCheck(v, 1, 1, "string")
 
@@ -243,6 +261,7 @@ var (
 
 			m := &Map{
 				OrderedMap: orderedmap.NewOrderedMap[any, *Cell](),
+				DataType:   "u8",
 				Pointers:   []any{},
 				Layout:     []string{},
 				Mem:        []byte{},
