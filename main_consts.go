@@ -11,7 +11,7 @@ const (
 	shortennedPLName = "yks"
 
 	fileType            = ".yks"
-	major, minor, patch = 1, 0, 0
+	major, minor, patch = 1, 1, 0
 	stage               = "beta"
 )
 
