@@ -22,28 +22,6 @@ var (
 	externalCallingChan = make(chan ExternalTask, 20048) //Вибачайте, але прийдеться через костилі
 
 	externalCallFinished = make(chan ExternalTaskResult, 10000)
-
-	nonvoidDatatypes = []string{
-		"i64",
-		"i32",
-		"i16",
-		"i8",
-		"u64",
-		"u32",
-		"u16",
-		"u8",
-
-		"f64",
-		"f32",
-
-		"bool",
-		"error",
-		"pointer",
-		"func",
-		"struct",
-		"string",
-		"table",
-	}
 )
 
 type ExternalTask struct {
@@ -254,7 +232,7 @@ func (cell *Cell) Set(value any, nonptr bool, x, y int) {
 		}
 	}
 
-	if cell.DataType != "" && cell.DataType != "any" && getValueType(value) != cell.DataType && !(value == nil && !slices.Contains(nonvoidDatatypes, cell.DataType)) {
+	if cell.DataType != "" && cell.DataType != "any" && getValueType(value) != cell.DataType {
 		throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 	}
 
