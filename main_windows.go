@@ -6,11 +6,11 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 import (
 	"log"
-	"runtime"
 	"strconv"
 	"syscall"
 	"unsafe"
@@ -351,6 +351,16 @@ func run(fileAbs, fileRel string, info bool) map[any]*Cell {
 	parser := NewParser(fileRel, tokens)
 	ast := parser.AST()
 
+	/*f, err := os.Create("cpu.pprof")
+	handle(err)
+	defer f.Close()
+
+	handle(pprof.StartCPUProfile(f))
+	time.AfterFunc(15*time.Second, func() {
+		pprof.StopCPUProfile()
+		fmt.Println("ok!")
+	})*/
+
 	interpreter := NewInterpreter(fileRel, ast)
 	return interpreter.Complete(info)
 }
@@ -363,7 +373,7 @@ func outputTokens(tokens []Token) {
 
 //!nasm -f bin s.asm -o test.bin
 
-// ? go build -o bin/yks.exe yks
+// ? go build -pgo=auto -ldflags="-s -w" -o bin/yks.exe yks
 // *go run -race yks runinfo test.yks
 func main() { //*go run yks run test.yks
 	commands["build"] = func(args []string) {

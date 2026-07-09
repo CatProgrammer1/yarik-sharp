@@ -216,9 +216,12 @@ var (
 
 			m := &Map{
 				OrderedMap: orderedmap.NewOrderedMap[any, *Cell](),
-				Pointers:   []any{},
-				Layout:     []string{},
-				Mem:        []byte{},
+
+				DataType: dataType,
+
+				Pointers: []any{},
+				Layout:   []string{},
+				Mem:      []byte{},
 			}
 
 			for i := 0; i < length; i++ {
