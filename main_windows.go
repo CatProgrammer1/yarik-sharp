@@ -258,7 +258,7 @@ func getFileString(path string) (string, error) {
 
 func throw(filename, errForm string, x, y int, v ...any) {
 
-	errMsg := fmt.Sprintf(shortennedPLName+" "+fmt.Sprintf("%s:%d:%d", filename, y, x)+": "+errForm, v...)
+	errMsg := fmt.Sprintf("\033[1m\033[94m"+shortennedPLName+"\033[0m"+" "+fmt.Sprintf("\033[91m%s:%d:%d\033[0m", filename, y, x)+": "+errForm, v...)
 	if !strings.HasSuffix(errMsg, ".") {
 		errMsg += "."
 	}
