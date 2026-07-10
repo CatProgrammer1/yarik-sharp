@@ -373,7 +373,7 @@ func outputTokens(tokens []Token) {
 
 //!nasm -f bin s.asm -o test.bin
 
-// ? go build -pgo=auto -ldflags="-s -w" -o bin/yks.exe yks
+// ? go build -ldflags="-s -w" -o bin/yks.exe yks
 // *go run -race yks runinfo test.yks
 func main() { //*go run yks run test.yks
 	commands["build"] = func(args []string) {

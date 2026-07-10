@@ -1426,6 +1426,8 @@ func importModule(path string, mainScope *Scope, x, y int) {
 	pathNS, _ := strings.CutSuffix(path, fileType)
 	absPath := getAbsPath(path)
 
+	fmt.Println(absPath)
+
 	for _, tag := range osTags {
 		absPathTag := absPath + tag
 		var finalPath string
@@ -2122,7 +2124,7 @@ func (inter *Interpreter) SetTableElementValue(table *Map, keys []any, value any
 }
 
 func (inter *Interpreter) SetInstanceFieldValue(instance *StructObject, fields []string, value any, index int, x, y int) {
-	if index >= len(fields) {
+	if index+1 > len(fields) {
 		return
 	}
 
@@ -2131,7 +2133,7 @@ func (inter *Interpreter) SetInstanceFieldValue(instance *StructObject, fields [
 	fieldVal, _ := instance.Get(field)
 	switch fieldVal := fieldVal.(type) {
 	case *StructObject:
-		if index >= len(fields) {
+		if index+1 == len(fields) {
 			instance.Set(field, value, x, y)
 			break
 		}
@@ -2421,6 +2423,8 @@ func (inter *Interpreter) CompleteNode(node Node) (end, skip bool, value []any) 
 		inter.GetNodeValue(node)
 	case *SetElem:
 		inter.SetElementValue(node)
+	case *SetFieldNode:
+		inter.SetFieldValue(node)
 	case *IfStmt:
 		result := inter.GetNodeValueS(node.Condition, node.X, node.Y)
 		if result == true {
