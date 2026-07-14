@@ -24,6 +24,8 @@ var (
 	externalCallFinished = make(chan ExternalTaskResult, 10000)
 )
 
+const ptrSize = uintptr(unsafe.Sizeof(uintptr(0)))
+
 type ExternalTask struct {
 	Addr uintptr
 
@@ -968,6 +970,8 @@ func (s *StructObject) ToMemoryLayout(layout []FieldLayout) []byte {
 			binary.LittleEndian.PutUint32(mem[offset:], math.Float32bits(val.Get().(float32)))
 		case "bool":
 			mem[offset] = byte(toUint64(val.Get()))
+		case "string", "table":
+			binary.LittleEndian.PutUint64(mem[offset:], uint64(uintptr(val.Ptr)))
 		case "instance":
 			//binary.LittleEndian.PutUint64(mem[offset:], uint64(uintptr(val.Ptr)))
 			instance := val.Get().(*StructObject)
@@ -1248,6 +1252,8 @@ func (s *StructObject) Layout() []FieldLayout {
 			size, align = 4, 4
 		case "pointer":
 			size, align, typ = 8, 8, "ptr"
+		case "string", "table":
+			size, align = ptrSize, ptrSize
 		case "bool":
 			size, align, typ = 1, 1, "bool"
 		default:
@@ -1425,8 +1431,6 @@ func importModule(path string, mainScope *Scope, x, y int) {
 	}
 	pathNS, _ := strings.CutSuffix(path, fileType)
 	absPath := getAbsPath(path)
-
-	fmt.Println(absPath)
 
 	for _, tag := range osTags {
 		absPathTag := absPath + tag

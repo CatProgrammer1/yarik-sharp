@@ -68,9 +68,6 @@ var (
 		",": "comma",
 		":": "colon",
 
-		//tags
-		"#": "fieldctype",
-
 		//comment
 		"/*": "cmtopen",
 		"*/": "cmtclose",
@@ -266,7 +263,9 @@ func (lexer *Lexer) GetTokens() []Token {
 			if !found {
 				ident := lexer.GetIdentifier()
 				if ident.Value == "" {
-					throw(lexer.CurrentFileName, "Unknown character '%s'", lexer.CurrentColumn, lexer.CurrentLine, charStr)
+					tokens = append(tokens, NewToken(charStr, "unknown", lexer.CurrentColumn, lexer.CurrentLine))
+					lexer.Next()
+					break MAIN_SWICH
 				}
 
 				switch ident.Value {

@@ -262,6 +262,10 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 	x, y := currentToken.Position, currentToken.Line
 
 	switch currentToken.Type {
+	case "unknown":
+		nodes = append(nodes, &Unknown{Value: currentToken.Value.(string), X: x, Y: y})
+
+		return nodes
 	case "ifstmt":
 		ifStmt := parser.ParseIfStmt()
 		ifStmt.X, ifStmt.Y = x, y

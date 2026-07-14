@@ -5,6 +5,18 @@ type Node interface {
 	Line() int
 }
 
+type Unknown struct {
+	Value string
+	X, Y  int
+}
+
+func (unknown *Unknown) Position() int {
+	return unknown.X
+}
+func (unknown *Unknown) Line() int {
+	return unknown.Y
+}
+
 type Brackets struct {
 	Value []Node
 	X, Y  int
@@ -148,7 +160,7 @@ func (numNode *NumNode) Line() int {
 type IntNode struct {
 	ValueI64 rawint64
 	ValueU64 rawuint64
-	X, Y  int
+	X, Y     int
 }
 
 func (intNode *IntNode) Position() int {
