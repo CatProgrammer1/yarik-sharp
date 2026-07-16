@@ -1587,6 +1587,7 @@ func (inter *Interpreter) GetBinOpValue(node *BinOpNode) any {
 
 	switch node.operator {
 	case "and":
+		fmt.Println("sigma", l, node.R)
 		return l == true && r == true
 	case "or":
 		return l == true || r == true

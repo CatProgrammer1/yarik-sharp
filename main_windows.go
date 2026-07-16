@@ -379,6 +379,7 @@ func main() { //*go run yks run test.yks
 	commands["build"] = func(args []string) {
 		fmt.Println("Jly")
 	}
+	
 	commands["run"] = func(args []string) {
 		if len(args) == 0 {
 			help([]string{})

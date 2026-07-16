@@ -349,9 +349,13 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 
 				rightOpNode := getLastRightOperand(lastNode)
 				if rightOpNode != nil {
+					fields := parser.Parse([]Node{}, false)
+
+					//go run yks run test.yks
+
 					node := &GetFieldNode{
 						rightOpNode,
-						parser.ParseValue(),
+						fields,
 						x, y,
 					}
 
@@ -526,6 +530,10 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 				}
 
 				switch node.operator {
+				case "and", "or":
+					binOpNode.L = getLastRightOperand(node)
+
+					setLastRightOperand(node, binOpNode)
 				case "mul", "div", "pow", "bitor":
 					binOpNode.L = node
 					nodes = replaceLastNodeWith(nodes, binOpNode)
@@ -548,15 +556,6 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 						parser.Next()
 						return nodes
 					}
-
-					/*if currentToken.Type == "and" || currentToken.Type == "or" {
-						binOpNode.L = node
-						nodes = replaceLastNodeWith(nodes, binOpNode)
-					} else {
-						binOpNode.L = node
-						//setLastRightOperand(node, binOpNode)
-						nodes = replaceLastNodeWith(nodes, binOpNode)
-					}*/
 					binOpNode.L = node
 					nodes = replaceLastNodeWith(nodes, binOpNode)
 				}
