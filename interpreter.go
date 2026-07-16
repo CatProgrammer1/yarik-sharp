@@ -133,8 +133,14 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 	case "f32", "f64":
 		bits := uint8(twoDigitStr(dataType[1:]))
 
-		if !checkType[float64](value) {
+		if !checkType[float64](value) && !checkType[float32](value) && !checkType[rawint64](value) {
 			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+		}
+
+		if i, ok := value.(rawint64); ok {
+			value = float64(i)
+		} else if f, ok := value.(float32); ok {
+			value = float64(f)
 		}
 
 		cell.Bits = bits
@@ -158,19 +164,19 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 		cell.Set(value.(uintptr), false, x, y)
 	case "string":
 		if !checkType[string](value) {
-			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected'%s' got '%s'", x, y, cell.DataType, getValueType(value))
 		}
 
 		cell.Set(value.(string), false, x, y)
 	case "func":
 		if !checkType[*FuncDec](value) {
-			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected'%s' got '%s'", x, y, cell.DataType, getValueType(value))
 		}
 
 		cell.Set(value.(*FuncDec), false, x, y)
 	case "struct":
 		if !checkType[*Structure](value) {
-			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected  '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 		}
 
 		cell.Set(value.(*Structure), false, x, y)
@@ -209,6 +215,10 @@ func (cell *Cell) InitFromRaw(value any, dataType string, nonptr bool, x, y int)
 
 		structObject, ok := value.(*StructObject)
 		if !ok || structObject.Identifier != cell.DataType {
+			if value == nil && !ok {
+				cell.Set(value, false, x, y)
+				return
+			}
 			throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
 		}
 
@@ -234,8 +244,8 @@ func (cell *Cell) Set(value any, nonptr bool, x, y int) {
 		}
 	}
 
-	if cell.DataType != "" && cell.DataType != "any" && getValueType(value) != cell.DataType {
-		throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected '%s' got '%s'", x, y, cell.DataType, getValueType(value))
+	if cell.DataType != "" && cell.DataType != "any" && getValueType(value) != cell.DataType && value != nil {
+		throw(cell.Scope.Interpreter.CurrentFileName, "Type mismatch: expected 1'%s' got '%s'", x, y, cell.DataType, getValueType(value))
 	}
 
 	if cell.DataType == "" {
@@ -312,7 +322,7 @@ func (cell *Cell) Set(value any, nonptr bool, x, y int) {
 	case "string":
 		cell.StringValue = value.(string)
 
-		ptr, buf := valueToPtr(cell.Scope.Interpreter, cell.StringValue, 0, 0)
+		ptr, buf := valueToPtr(cell.Scope.Interpreter, cell.StringValue, x, y)
 		cell.TempBuf = buf
 
 		if !nonptr {
@@ -370,10 +380,18 @@ func (cell *Cell) Set(value any, nonptr bool, x, y int) {
 	default:
 		instance, ok := value.(*StructObject)
 		if !ok {
-			panic("Unsupported type: " + fmt.Sprintf("'%s'", getValueType(value)))
+			if value != nil {
+				panic("Unsupported type: " + fmt.Sprintf("'%s'", getValueType(value)))
+			}
+			instance = nil
 		}
 
 		cell.InstanceValue = instance
+
+		if instance == nil {
+			cell.Ptr = unsafe.Pointer(nil)
+			return
+		}
 
 		if !nonptr {
 			cell.Ptr = unsafe.Pointer(instance.Address())

@@ -68,9 +68,10 @@ var (
 		",": "comma",
 		":": "colon",
 
-		//comment
-		"/*": "cmtopen",
-		"*/": "cmtclose",
+		//comment:
+		"/*": "cmtopenml",
+		"*/": "cmtcloseml",
+		"//": "cmtopen",
 
 		//boolean operators
 		"==": "equals",
@@ -325,6 +326,37 @@ MAIN_LOOP:
 					break MAIN_SWICH
 				case nilVoid:
 					tokens = append(tokens, NewToken("void", "nil", lexer.CurrentColumn, lexer.CurrentLine))
+					break MAIN_SWICH
+				case "//":
+					for {
+						if lexer.CurrentPosition < 0 {
+							break MAIN_LOOP
+						}
+
+						charStr := lexer.Str()
+						if charStr == "\n" {
+							lexer.Next()
+							break
+						}
+
+						lexer.Next()
+					}
+					break MAIN_SWICH
+				case "/*":
+					for {
+						if lexer.CurrentPosition < 0 {
+							break MAIN_LOOP
+						}
+
+						charStr := lexer.Str()
+						nextChar := lexer.PeekNext()
+						if charStr == "*" && nextChar != -1 && string(nextChar) == "/" {
+							lexer.NextTimes(2)
+							break
+						}
+
+						lexer.Next()
+					}
 					break MAIN_SWICH
 				}
 
