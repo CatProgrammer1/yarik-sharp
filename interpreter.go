@@ -869,7 +869,7 @@ type FieldDecl struct {
 	Func                 *FuncDec
 }
 
-func newInstance(name string, fields []*Field, methods []*Method) *StructObject {
+func newInstance(name string, fields map[string]*Field, methods map[string]*Method) *StructObject {
 	return &StructObject{
 		Identifier: name,
 		Fields:     fields,
@@ -881,9 +881,11 @@ func newInstance(name string, fields []*Field, methods []*Method) *StructObject 
 type StructObject struct {
 	scope      *Scope
 	Identifier string
-	Fields     []*Field
-	Methods    []*Method
+	Fields     map[string]*Field
+	Methods    map[string]*Method
 	LastMem    []byte
+
+	IsDirty bool
 }
 
 type Field struct {
@@ -1079,6 +1081,7 @@ func (s *StructObject) FromMemoryLayout(layout []FieldLayout, x, y int) {
 			panic("Unsupported field type " + lf.Type)
 		}
 	}
+	s.IsDirty = true
 }
 
 func (s *StructObject) Address() uintptr {
@@ -1250,10 +1253,10 @@ func (s *StructObject) Layout() []FieldLayout {
 			size, align = 8, 8
 		case "f32":
 			size, align = 4, 4
-		case "pointer":
-			size, align, typ = 8, 8, "ptr"
 		case "string", "table":
 			size, align = ptrSize, ptrSize
+		case "pointer":
+			size, align, typ = 8, 8, "ptr"
 		case "bool":
 			size, align, typ = 1, 1, "bool"
 		default:
@@ -1288,34 +1291,30 @@ func (s *StructObject) Layout() []FieldLayout {
 }
 
 func (structObj *StructObject) Get(fieldName string) (any, bool) {
-	for _, field := range structObj.Fields {
-		if field.Identifier == fieldName {
-			cell := field.Value
-			return cell.Get(), true
-		}
+	field, ok := structObj.Fields[fieldName]
+	if ok {
+		return field.Value.Get(), true
 	}
-	for _, field := range structObj.Methods {
-		if field.Identifier == fieldName {
-			cell := field.Func
-			return cell.Get(), true
-		}
+
+	method, ok := structObj.Methods[fieldName]
+	if ok {
+		return method.Func.Get(), true
 	}
+
 	return nil, false
 }
 
 func (structObj *StructObject) GetCell(fieldName string) (*Cell, bool) {
-	for _, field := range structObj.Fields {
-		if field.Identifier == fieldName {
-			cell := field.Value
-			return cell, true
-		}
+	field, ok := structObj.Fields[fieldName]
+	if ok {
+		return field.Value, true
 	}
-	for _, method := range structObj.Methods {
-		if method.Identifier == fieldName {
-			cell := method.Func
-			return cell, true
-		}
+
+	method, ok := structObj.Methods[fieldName]
+	if ok {
+		return method.Func, true
 	}
+
 	return nil, false
 }
 
@@ -2259,29 +2258,41 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 		Identifier: identifier,
 	}
 
-	fields := make([]*Field, len(structObjNode.Fields))
-	methods := make([]*Method, originalStructure.CountMethods())
+	fields := make(map[string]*Field, len(structObjNode.Fields))
+	methods := make(map[string]*Method, originalStructure.CountMethods())
 
 	method_i := 0
 	for _, fieldDecl := range originalStructure.Fields {
 		if fieldDecl.Func == nil {
 			continue
 		}
-		fieldDecl.Func.Self = structObject
+
+		fieldDeclFunc := fieldDecl.Func
+
+		methodFuncClone := new(FuncDec)
+		methodFuncClone.Self = structObject
+		methodFuncClone.Arguments = fieldDeclFunc.Arguments
+		methodFuncClone.ArgumentsDataTypes = fieldDeclFunc.ArgumentsDataTypes
+		methodFuncClone.Body = fieldDeclFunc.Body
+		methodFuncClone.Identifier = fieldDeclFunc.Identifier
+		methodFuncClone.ReturnDataTypes = fieldDeclFunc.ReturnDataTypes
+		methodFuncClone.Template = fieldDeclFunc.Template
+		methodFuncClone.X = fieldDeclFunc.X
+		methodFuncClone.Y = fieldDeclFunc.Y
 
 		cell := &Cell{
 			Scope: inter.CurrentScope,
 		}
-		cell.Set(fieldDecl.Func, false, structObjNode.X, structObjNode.Y)
+		cell.Set(methodFuncClone, false, structObjNode.X, structObjNode.Y)
 
-		methods[method_i] = &Method{
+		methods[fieldDecl.Identifier] = &Method{
 			Identifier: fieldDecl.Identifier,
 			Func:       cell,
 		}
 		method_i++
 	}
 
-	for i, fieldNode := range structObjNode.Fields {
+	for _, fieldNode := range structObjNode.Fields {
 		fieldName := fieldNode.Identifier.Value
 		if !originalStructure.CheckField(fieldName) {
 			throw(inter.CurrentFileName, "Attempt to assign a nonexistent field '%s' of structure '%s' while trying to make an instance.", structObjNode.X, structObjNode.Y, fieldName, identifier)
@@ -2311,7 +2322,7 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 			cell.InitFromRaw(v, originalStructField.DataType, false, structObjNode.X, structObjNode.Y)
 		}
 
-		fields[i] = &Field{
+		fields[fieldNode.Identifier.Value] = &Field{
 			Identifier: fieldNode.Identifier.Value,
 			DataType:   cell.DataType,
 			Value:      cell,
@@ -2321,6 +2332,8 @@ func (inter *Interpreter) NewStructObject(structObjNode *StructNode) *StructObje
 	structObject.Fields = fields
 	structObject.Methods = methods
 	structObject.ToMemoryLayout(structObject.Layout())
+
+	structObject.IsDirty = true
 
 	return structObject
 }
