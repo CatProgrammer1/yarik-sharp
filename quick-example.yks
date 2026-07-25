@@ -66,15 +66,15 @@ yar instance = new NewStruct{
 }
 
 /*Вот список всех встроенных функций:
-1)OS_NAME() -> string
-2)print(...) -> void
-3)sleep(n: number) -> void
-4)throw(...) -> void
-5)len(v: string | table) -> number(int)
-6)tostr(v: any) -> string
-7)tonum(str: string) -> number
-8)gettype(v: any) -> string
-9)tochar(v: number(byte)) -> string(character)
-10)string(t: [number(byte)]) -> string
-11)closehandle(n: number(pointer)) -> error
+1)OS_NAME() . string
+2)print(...) . void
+3)sleep(n: number) . void
+4)throw(...) . void
+5)len(v: string | table) . number(int)
+6)tostr(v: any) . string
+7)tonum(str: string) . number
+8)gettype(v: any) . string
+9)tochar(v: number(byte)) . string(character)
+10)string(t: [number(byte)]) . string
+11)closehandle(n: number(pointer)) . error
 */

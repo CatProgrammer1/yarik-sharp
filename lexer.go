@@ -57,7 +57,7 @@ var (
 		"|": "bitor",
 		"&": "getptr",
 
-		"->": "indexstruct",
+		".": "indexstruct",
 
 		"(": "openbracket",
 		")": "closebracket",

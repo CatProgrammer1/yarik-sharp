@@ -351,8 +351,6 @@ func (parser *Parser) Parse(nodes []Node, bodyParsing bool) []Node {
 				if rightOpNode != nil {
 					fields := parser.Parse([]Node{}, false)
 
-					//go run yks run test.yks
-
 					node := &GetFieldNode{
 						rightOpNode,
 						fields,
@@ -1226,7 +1224,7 @@ VARPAR:
 	return varDec
 }
 
-// -> 1: Arguments; 2: Arguments data types
+// . 1: Arguments; 2: Arguments data types
 func (parser *Parser) ParseDeclArgs() ([]IdentNode, []IdentNode) {
 	args := []IdentNode{}
 	argsDataTypes := []IdentNode{}

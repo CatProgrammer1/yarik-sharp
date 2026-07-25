@@ -13,7 +13,7 @@ struct File {
         }
 
         yar _, _, err error = kernelReadFile(
-            this->h,
+            this.h,
             buf,
             len(buf),
             void,
@@ -24,7 +24,7 @@ struct File {
     }
      func write(buf table) {
         yar _, _, err error = kernelWriteFile(
-            this->h,
+            this.h,
             buf,
             len(buf),
             void,
@@ -34,7 +34,7 @@ struct File {
         return err
     }
     func close() {
-        yar _, _, err error = kernelCloseHandle(this->h)
+        yar _, _, err error = kernelCloseHandle(this.h)
 
         return err
     }
